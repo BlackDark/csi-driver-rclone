@@ -1,0 +1,69 @@
+# Driver image; also used for Mount Pods (`mount` mode).
+image:
+  repository: ghcr.io/blackdark/csi-driver-rclone
+  # Defaults to the chart appVersion.
+  tag: ""
+  # Optional; when set the image is referenced as repository@digest.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Host path of the kubelet root dir; k0s and some distros differ.
+kubeletDir: /var/lib/kubelet
+
+# Host dir holding the default hostPath Caches, one subdir per volume.
+cacheRoot: /var/lib/rclone-csi/cache
+
+logLevel: info
+
+node:
+  # How long NodePublishVolume waits for a Mount Pod to become ready.
+  publishTimeout: 2m
+  priorityClassName: system-node-critical
+  # Must exceed the drain of a Mount Pod being torn down by the plugin.
+  terminationGracePeriodSeconds: 30
+  tolerations:
+    - operator: Exists
+  nodeSelector: {}
+  affinity: {}
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  podAnnotations: {}
+
+# Mount Pods are created by the node plugin, one per (volume, node).
+mountPod:
+  # Non-root uid/gid the Mount Pod runs as (ADR 0002).
+  uid: 65532
+  gid: 65532
+  priorityClassName: system-node-critical
+  # Bound on draining pending uploads when a Mount Pod stops.
+  drainTimeout: 5m
+  # Mount Pod wait for the node plugin's unmount after draining.
+  unmountWait: 30s
+  tolerations:
+    - operator: Exists
+
+sidecars:
+  nodeDriverRegistrar:
+    image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.14.0@sha256:5244abbe87e01b35adeb8bb13882a74785df0c0619f8325c9e950395c3f72a97
+    resources:
+      requests:
+        cpu: 5m
+        memory: 16Mi
+      limits:
+        memory: 64Mi
+  livenessProbe:
+    image: registry.k8s.io/sig-storage/livenessprobe:v2.19.0@sha256:06da0d5b8908072f2e4522692aee8dc119fba7247a9658497e1153992cd777e9
+    # Pod port the probe serves on; the pod has no hostNetwork.
+    port: 9808
+    resources:
+      requests:
+        cpu: 5m
+        memory: 16Mi
+      limits:
+        memory: 64Mi
