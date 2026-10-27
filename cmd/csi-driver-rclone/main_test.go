@@ -9,10 +9,8 @@ import (
 )
 
 func TestDispatch(t *testing.T) {
-	for _, m := range []string{"node", "controller"} {
-		if err := dispatch(m, nil, io.Discard); !errors.Is(err, errNotImplemented) {
-			t.Errorf("%s: got %v, want not implemented", m, err)
-		}
+	if err := dispatch("controller", nil, io.Discard); !errors.Is(err, errNotImplemented) {
+		t.Errorf("controller: got %v, want not implemented", err)
 	}
 	if err := dispatch("bogus", nil, io.Discard); !errors.Is(err, errUnknownMode) {
 		t.Errorf("bogus: got %v, want unknown mode", err)
@@ -38,6 +36,25 @@ func TestRunExitCodes(t *testing.T) {
 	for name, c := range cases {
 		if got := run(c.args, io.Discard); got != c.want {
 			t.Errorf("%s: got %d, want %d", name, got, c.want)
+		}
+	}
+}
+
+func TestNodeFlags(t *testing.T) {
+	t.Setenv("NODE_ID", "n1")
+	t.Setenv("POD_NAMESPACE", "drv")
+	f, err := parseNodeFlags([]string{"--mount-image=img", `--mount-tolerations=[{"operator":"Exists"}]`}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := f.cfg.Pod
+	if f.cfg.NodeID != "n1" || p.Namespace != "drv" || p.UID != 65532 || len(p.Tolerations) != 1 ||
+		p.KubeletDir != "/var/lib/kubelet" || f.cfg.PublishTimeout.String() != "2m0s" {
+		t.Errorf("flags: %+v", f.cfg)
+	}
+	for _, args := range [][]string{{}, {"--mount-image=img", "--mount-uid=0"}, {"--mount-image=img", "--mount-tolerations=x"}} {
+		if _, err := parseNodeFlags(args, io.Discard); err == nil {
+			t.Errorf("%v accepted", args)
 		}
 	}
 }

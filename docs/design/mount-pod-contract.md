@@ -11,7 +11,8 @@ How the node plugin and a Mount Pod work together. Background: [ADR 0001](../adr
   - `fuse/`: the FUSE mountpoint. Only the node plugin mounts it, and only the node plugin sees it (Bidirectional).
   - `handoff.sock`: a unix socket served by the node plugin.
 - The Mount Pod mounts the per-mount directory, without `fuse/`, through hostPath `<...>/mounts/<id>`, using `mountPropagation: None`.
-- Cache: hostPath `<cacheRoot>/<volume hash>`, or `cacheVolume`. It is mounted at `/cache`.
+- Cache: hostPath `<cacheRoot>/<volume hash>` (first 16 hex of sha256 of the volume ID, type `DirectoryOrCreate`), or `cacheVolume` decoded strictly as a `VolumeSource`. It is mounted at `/cache`. The node plugin creates the hostPath dir and the per-mount directory owned by the Mount Pod uid/gid, mode `0750`, so it needs `cacheRoot` mounted too.
+- Pod: `restartPolicy: Never` (a restarted container would need a new fd, so the plugin recreates the pod), `automountServiceAccountToken: false`, `enableServiceLinks: false`, `fsGroup` = Mount Pod gid (Secret files are `0440`), an `emptyDir` at `/tmp` beside the read-only root filesystem, `terminationGracePeriodSeconds` = drain timeout + unmount wait + 10s.
 - The Secret is mounted at `/etc/rclone-mount/`. It holds `spec.json` (serialized Mount Spec, without the password) and `config-password` (optional).
 - In the Mount Pod the per-mount directory is mounted at `/run/rclone-mount/`, so the socket is `/run/rclone-mount/handoff.sock`. All paths are `mount` mode flags (`--spec`, `--config-password`, `--socket`, `--cache-dir`) with these defaults.
 
@@ -34,12 +35,12 @@ After the handshake the client sends `ready`, `drained` or `drain-timeout`; the 
 
 ## Sequence
 
-1. `NodePublishVolume`: resolve the Mount Spec, then ensure the Secret and Pod exist, which is idempotent by name.
-2. The node plugin creates `fuse/`, opens `/dev/fuse`, runs mount(2) per ADR 0002 (fstype `fuse.rclone`, `allow_other`, uid/gid = Mount Pod uid/gid), and serves the fd on `handoff.sock`.
+1. `NodePublishVolume`: resolve the Mount Spec and take the per-`<id>` lock. A target that already is a healthy mount returns OK.
+2. The node plugin creates `fuse/`, opens `/dev/fuse`, runs mount(2) per ADR 0002 (fstype `fuse.rclone`, `allow_other`, uid/gid = Mount Pod uid/gid), and serves the fd on `handoff.sock`. It then creates the Pod and, once the Pod UID is known, the Secret with its ownerReference; both are idempotent by name. The Secret volume is not optional, so kubelet holds the Pod until the Secret exists. A Pod still terminating fails the publish with `Unavailable`; kubelet retries. Any failure up to step 4 deletes Pod and Secret and unmounts `fuse/`.
 3. The Mount Pod (`mount` mode) connects, receives the fd, and runs rclone mount2 in-process on `/dev/fd/N`. Once the VFS is serving, it sends `ready` on the same connection, then keeps the connection open. That open connection is its liveness signal to the plugin.
 4. The node plugin waits for `ready` (bounded by the publish timeout), then bind-mounts `fuse/<subpath?>` onto the target path, and remounts read-only if requested.
-5. `NodeUnpublishVolume`: unmount the target. If no other targets on this node use `<id>`, start the Linger.
-6. Linger expiry: delete the Pod. The Mount Pod receives SIGTERM, drains the upload queue (bounded by `--drain-timeout`, default 5m), and sends `drained` or `drain-timeout` on the connection. The plugin then unmounts `fuse/` lazily, and rclone exits 0 on "unmounted externally". Without an unmount within `--unmount-wait` (default 30s) it exits 0 anyway. The Secret is garbage-collected.
+5. `NodeUnpublishVolume`: unmount the target. If no other targets on this node use `<id>`, start the Linger. Until the Linger lands (ticket 05) it expires at once: the Pod is deleted within the RPC and the rest of step 6 runs in the background under the `<id>` lock.
+6. Linger expiry: delete the Pod. The Mount Pod receives SIGTERM, drains the upload queue (bounded by `--drain-timeout`, default 5m), and sends `drained` or `drain-timeout` on the connection. The plugin then unmounts `fuse/` lazily, and rclone exits 0 on "unmounted externally". Without an unmount within `--unmount-wait` (default 30s) it exits 0 anyway. The plugin waits for the drain result or connection EOF, bounded by drain timeout + unmount wait + 10s. The Secret is garbage-collected; the plugin also deletes it as a fallback.
 
 ## Restart and failure
 

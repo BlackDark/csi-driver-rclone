@@ -56,8 +56,11 @@ func dispatch(mode string, args []string, stderr io.Writer) error {
 	if !known {
 		return fmt.Errorf("%w %q", errUnknownMode, mode)
 	}
-	if mode == "mount" {
+	switch mode {
+	case "mount":
 		return runMount(args, stderr)
+	case "node":
+		return runNode(args, stderr)
 	}
 	fs := flag.NewFlagSet(mode, flag.ContinueOnError)
 	fs.SetOutput(stderr)
