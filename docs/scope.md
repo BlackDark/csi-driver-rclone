@@ -19,8 +19,8 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 ## Security posture
 
 - The node plugin is the only privileged component, because it needs Bidirectional propagation for bind mounts. It does not use hostNetwork.
-- The controller and the Mount Pod are unprivileged where possible: the Mount Pod depends on the fd-passing spike. Images are distroless and non-root.
-- RBAC: pods and Secrets only in the driver namespace. No cluster-wide Secret access. Events cluster-wide (create, patch), so drain timeouts show on the workload pod.
+- The controller runs unprivileged and non-root, with a read-only root filesystem, no hostPath and no Secret access. The Mount Pod is unprivileged where possible: it depends on the fd-passing spike. Images are distroless and non-root.
+- RBAC: pods and Secrets only in the driver namespace. No cluster-wide Secret access. Events cluster-wide (create, patch), so drain timeouts show on the workload pod. The controller has only what external-provisioner needs: PVs, PVCs, StorageClasses, Events, and leases in the driver namespace.
 - Mount Pods run at `system-node-critical` priority, so the apps using them are evicted first. Resources are set per StorageClass or PV, with a default request of 64Mi and no memory limit.
 
 ## Not possible, by design

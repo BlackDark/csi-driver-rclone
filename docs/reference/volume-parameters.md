@@ -26,6 +26,16 @@ Keys read by Mount Spec resolution (`internal/mountspec`). Terms: [GLOSSARY.md](
 
 Keys containing `/` (Kubernetes-injected, `csi.storage.k8s.io/*`) are ignored.
 
+## Dynamic Volumes (StorageClass parameters)
+
+StorageClass parameters become the volume context of each provisioned PV. The controller validates them with the rules below (no secret needed) and rejects a bad StorageClass at provisioning time.
+
+- `remotePath` is required and templated: `${pvc.namespace}`, `${pvc.name}`, `${pv.name}`. It must contain `${pvc.name}` or `${pv.name}`, so every PVC gets its own path. Other variables are rejected.
+- The resolved path must be relative, with no empty, `.` or `..` segments.
+- The PV volume context holds the parameters with `remotePath` resolved and without `csi.storage.k8s.io/*` keys. It records the Remote reference and path for a later delete policy.
+- Set the Credential Secret with `csi.storage.k8s.io/node-publish-secret-name` and `-namespace` (Kubernetes resolves `${pvc.namespace}` there). The secret must not set `remotePath`, because the volume context already does.
+- `DeleteVolume` never touches remote data; `reclaimPolicy: Delete` removes only the PV object. The volume ID is the PV name; the requested capacity is recorded, not enforced.
+
 ## Rules
 
 - Credentials are rejected in the volume context: `configData`, `configPassword`, `remoteType`, and any key containing `password`, `pass`, `secret`, `token`, `key` or `credential`.

@@ -4,8 +4,8 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `${pvc.namespace}`, `${pvc.name}` and `${pv.name}` are templated; StorageClass parameters are validated through the Mount Spec rules
-- [ ] The volume context records the Remote reference and the resolved path, so a later delete policy is possible
-- [ ] e2e: two PVCs get isolated dirs; after the PVC is deleted the data remains
+- [x] `${pvc.namespace}`, `${pvc.name}` and `${pv.name}` are templated; StorageClass parameters are validated through the Mount Spec rules
+- [x] The volume context records the Remote reference and the resolved path, so a later delete policy is possible
+- [x] e2e: two PVCs get isolated dirs; after the PVC is deleted the data remains
