@@ -9,7 +9,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$here/../.."
 
 if ! kind get clusters | grep -qx "$CLUSTER"; then
-  kind create cluster --name "$CLUSTER" --wait 120s
+  kind create cluster --name "$CLUSTER" --config "$here/kind.yaml" --wait 120s
 fi
 kubectl config use-context "kind-$CLUSTER" >/dev/null
 
@@ -20,10 +20,6 @@ kubectl apply -f "$here/minio.yaml"
 
 kubectl create namespace "$DRIVER_NS" --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace "$DRIVER_NS" pod-security.kubernetes.io/enforce=privileged --overwrite
-# A plugin restart orphans live Mount Pods until restart adoption (ticket 06) lands,
-# so a rerun starts from no workload and no Mount Pod.
-kubectl delete pods -n e2e-app --all --ignore-not-found --wait --timeout 3m
-kubectl delete pods -n "$DRIVER_NS" -l app.kubernetes.io/component=mount --ignore-not-found --wait --timeout 7m
 # Rolls the DaemonSet even when only the locally rebuilt image changed.
 helm upgrade --install csi-rclone "$root/charts/csi-driver-rclone" -n "$DRIVER_NS" \
   --set image.repository=csi-driver-rclone --set image.tag=e2e --set image.pullPolicy=Never \
