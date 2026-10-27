@@ -23,7 +23,7 @@ kubectl label namespace "$DRIVER_NS" pod-security.kubernetes.io/enforce=privileg
 # Rolls the DaemonSet even when only the locally rebuilt image changed.
 helm upgrade --install csi-rclone "$root/charts/csi-driver-rclone" -n "$DRIVER_NS" \
   --set image.repository=csi-driver-rclone --set image.tag=e2e --set image.pullPolicy=Never \
-  --set logLevel=debug --set-string "node.podAnnotations.e2e/build=$(date +%s)" \
+  --set logLevel=debug --set mountPod.linger=20s --set-string "node.podAnnotations.e2e/build=$(date +%s)" \
   --wait --timeout 3m
 
 kubectl -n minio rollout status deploy/minio --timeout 3m
