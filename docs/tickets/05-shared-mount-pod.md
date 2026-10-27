@@ -4,9 +4,9 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] e2e: two pods, one Mount Pod; the read-only pod gets EROFS on write
-- [ ] e2e: a republish within the Linger reuses the Mount Pod
-- [ ] e2e: a write with `vfs-write-back` is on MinIO after the Mount Pod stops
-- [ ] A drain timeout emits an event
+- [x] e2e: two pods, one Mount Pod; the read-only pod gets EROFS on write
+- [x] e2e: a republish within the Linger reuses the Mount Pod
+- [x] e2e: a write with `vfs-write-back` is on MinIO after the Mount Pod stops
+- [x] A drain timeout emits an event
