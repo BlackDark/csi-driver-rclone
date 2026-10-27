@@ -17,7 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/mount-utils"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/csiserver"
 	"github.com/BlackDark/csi-driver-rclone/internal/identity"
@@ -97,7 +96,7 @@ func runNode(args []string, stderr io.Writer) error {
 	}
 	srv := node.New(f.cfg, node.Deps{
 		Kube:    node.NewKube(cs, f.cfg.Pod.Namespace),
-		Mounter: mount.New(""),
+		Mounter: node.NewBindMounter(),
 		Fuse:    node.RealFuse{},
 		Handoff: node.RealHandoff{},
 		Log:     log,
