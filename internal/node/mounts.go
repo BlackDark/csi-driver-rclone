@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -35,6 +36,13 @@ type fuseMount struct {
 	stopServe            context.CancelFunc
 	served               chan struct{} // closed when Serve returned
 	drainTimedOut        bool          // set before drained is closed
+	lost                 chan struct{} // closed when the Pod watch sees the Mount Pod stop unasked
+	lostOnce             sync.Once
+	releasing            atomic.Bool // set while the plugin itself stops the Mount Pod
+
+	// spec and volumeID let a lost Mount Pod be recreated; spec is nil when unknown.
+	spec     *mountspec.Spec
+	volumeID string
 
 	// Guarded by the <id> lock.
 	podUID    types.UID
@@ -54,7 +62,11 @@ func (m *fuseMount) isGone() bool {
 	}
 }
 
-// watch turns handoff events into state; only the connection that got the fd counts.
+// signalLost reports that the Mount Pod stopped without the plugin asking.
+func (m *fuseMount) signalLost() { m.lostOnce.Do(func() { close(m.lost) }) }
+
+// watch turns handoff events into state; only the connection that got the fd, or
+// that adopted the mount, counts.
 func (m *fuseMount) watch(events <-chan handoff.Event) {
 	var fdConn uint64
 	for {
@@ -63,7 +75,7 @@ func (m *fuseMount) watch(events <-chan handoff.Event) {
 			return
 		case e := <-events:
 			switch e.Kind {
-			case handoff.EventFDSent:
+			case handoff.EventFDSent, handoff.EventAdopted:
 				fdConn = e.Conn
 			case handoff.EventReady:
 				m.readyOnce.Do(func() { close(m.ready) })
@@ -92,21 +104,26 @@ func (s *Server) fuseOpts(spec mountspec.Spec) fusemount.Opts {
 	}
 }
 
-// startMount mounts fuse/ and serves its fd on handoff.sock.
-func (s *Server) startMount(id string, spec mountspec.Spec) (*fuseMount, error) {
+// newFuseMount is the in-memory state of mount id, not yet served.
+func (s *Server) newFuseMount(id string) *fuseMount {
 	kd := s.cfg.Pod.KubeletDir
-	m := &fuseMount{
-		id: id, name: mountpod.Name(id),
+	return &fuseMount{
+		id: id, name: mountpod.Name(id), fd: -1,
 		mountDir: mountpod.MountDir(kd, id), fuseDir: mountpod.FuseDir(kd, id),
 		ready: make(chan struct{}), drained: make(chan struct{}), gone: make(chan struct{}),
-		served: make(chan struct{}),
+		served: make(chan struct{}), lost: make(chan struct{}),
 	}
-	uid, gid := int(s.cfg.Pod.UID), int(s.cfg.Pod.GID)
-	if err := s.deps.PrepareDir(m.mountDir, uid, gid); err != nil {
+}
+
+// startMount mounts fuse/ and serves its fd on handoff.sock.
+func (s *Server) startMount(id, volumeID string, spec mountspec.Spec) (*fuseMount, error) {
+	m := s.newFuseMount(id)
+	m.spec, m.volumeID = &spec, volumeID
+	if err := s.deps.PrepareDir(m.mountDir, int(s.cfg.Pod.UID), int(s.cfg.Pod.GID)); err != nil {
 		return nil, fmt.Errorf("prepare mount dir: %w", err)
 	}
-	// No live mount for id is known, so a mount on fuse/ is a dead leftover of a
-	// plugin restart; it would fail mkdir with EEXIST. Adoption (ticket 06) replaces this.
+	// Adoption at start took over every live mount, so a mount still on fuse/ is dead
+	// (its Mount Pod is gone); it would fail mkdir with EEXIST.
 	if err := s.deps.Fuse.Unmount(m.fuseDir, true); err == nil {
 		s.deps.Log.Warn("unmounted stale fuse mount", "id", id)
 	}
@@ -118,18 +135,26 @@ func (s *Server) startMount(id string, spec mountspec.Spec) (*fuseMount, error) 
 		return nil, err
 	}
 	m.fd = fd
+	s.serve(m, handoff.ModeFresh)
+	return m, nil
+}
+
+// serve runs m's handoff server until stopMount; ModeAdopt serves no fd.
+func (s *Server) serve(m *fuseMount, mode handoff.ServerMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.stopServe = cancel
 	events := make(chan handoff.Event, 16)
-	cfg := handoff.ServerConfig{SockPath: mountpod.SockPath(kd, id), FD: fd, Mode: handoff.ModeFresh, UID: uid, GID: gid}
+	cfg := handoff.ServerConfig{
+		SockPath: mountpod.SockPath(s.cfg.Pod.KubeletDir, m.id), FD: m.fd, Mode: mode,
+		UID: int(s.cfg.Pod.UID), GID: int(s.cfg.Pod.GID),
+	}
 	go func() {
 		defer close(m.served)
 		if err := s.deps.Handoff.Serve(ctx, cfg, events); err != nil {
-			s.deps.Log.Error("handoff server", "id", id, "err", err)
+			s.deps.Log.Error("handoff server", "id", m.id, "err", err)
 		}
 	}()
 	go m.watch(events)
-	return m, nil
 }
 
 // waitReady blocks until the Mount Pod serves the mount, bounded by the publish timeout.

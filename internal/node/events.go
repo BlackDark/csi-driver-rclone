@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -60,11 +59,5 @@ func warningEvent(ref corev1.ObjectReference, reason, msg, node string, now meta
 
 func (s *Server) reportDrainTimeout(m *fuseMount) {
 	s.deps.Log.Warn("mount pod drain timed out", "id", m.id, "pod", m.name, "timeout", s.cfg.Pod.DrainTimeout)
-	ctx, cancel := context.WithTimeout(context.Background(), kubeCallTimeout)
-	defer cancel()
-	for _, e := range s.drainTimeoutEvents(m) {
-		if err := s.deps.Kube.CreateEvent(ctx, &e); err != nil {
-			s.deps.Log.Warn("emit event", "reason", e.Reason, "object", e.InvolvedObject.Name, "err", err)
-		}
-	}
+	s.emit(s.drainTimeoutEvents(m))
 }

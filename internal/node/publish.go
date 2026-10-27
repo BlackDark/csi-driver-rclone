@@ -44,8 +44,7 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 	if m := s.getMount(id); m != nil && mounted {
 		s.cancelLinger(m)
-		m.lastPod = workloadPod(req.GetVolumeContext())
-		s.deps.Users.Add(id, target)
+		s.addUser(m, target, workloadPod(req.GetVolumeContext()))
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 	m, err := s.ensureMount(ctx, id, req.GetVolumeId(), spec)
@@ -59,8 +58,7 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if err := s.deps.Mounter.Mount(m.fuseDir, target, "", opts); err != nil {
 		return nil, status.Errorf(codes.Internal, "bind mount %s: %v", target, err)
 	}
-	m.lastPod = workloadPod(req.GetVolumeContext())
-	s.deps.Users.Add(id, target)
+	s.addUser(m, target, workloadPod(req.GetVolumeContext()))
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
@@ -114,7 +112,7 @@ func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec moun
 			s.cancelLinger(m)
 			return m, nil
 		}
-		// Mount Pod died; recovery of existing binds is ticket 06.
+		// Mount Pod died and recovery has not replaced it yet.
 		s.abort(m)
 	}
 	pod, secret, err := mountpod.Build(mountpod.Input{Config: s.cfg.Pod, NodeName: s.cfg.NodeID, VolumeID: volumeID, Spec: spec})
@@ -127,7 +125,7 @@ func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec moun
 			return nil, status.Errorf(codes.Internal, "prepare cache dir: %v", err)
 		}
 	}
-	m, err := s.startMount(id, spec)
+	m, err := s.startMount(id, volumeID, spec)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "fuse mount: %v", err)
 	}
@@ -148,6 +146,7 @@ func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec moun
 		s.abort(m)
 		return nil, publishError(err)
 	}
+	go s.monitor(m)
 	return m, nil
 }
 
@@ -164,6 +163,7 @@ func publishError(err error) error {
 // abort removes a mount that never became ready or whose Mount Pod died.
 func (s *Server) abort(m *fuseMount) {
 	s.cancelLinger(m)
+	m.releasing.Store(true)
 	ctx, cancel := context.WithTimeout(context.Background(), kubeCallTimeout)
 	defer cancel()
 	if err := s.deps.Kube.DeletePod(ctx, m.name); err != nil {

@@ -21,6 +21,7 @@ func (s *Server) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	if err := mount.CleanupMountPoint(target, s.deps.Mounter, true); err != nil {
 		return nil, status.Errorf(codes.Internal, "unmount %s: %v", target, err)
 	}
+	s.forgetTarget(target)
 	id, ok := s.deps.Users.Lookup(target)
 	if !ok {
 		return &csi.NodeUnpublishVolumeResponse{}, nil
@@ -40,7 +41,9 @@ func (s *Server) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 // release deletes the Mount Pod. It owns unlock; the rest of the teardown runs in the
 // background under the lock.
 func (s *Server) release(ctx context.Context, m *fuseMount, unlock func()) error {
+	m.releasing.Store(true)
 	if err := s.deps.Kube.DeletePod(ctx, m.name); err != nil {
+		m.releasing.Store(false)
 		unlock()
 		return err
 	}

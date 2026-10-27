@@ -1,9 +1,12 @@
 package node
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
-// Users tracks which target paths use which mount <id>. In memory for now; after a
-// plugin restart it is to be rebuilt from the mount table (ticket 06).
+// Users tracks which target paths use which mount <id>. In memory; Adopt rebuilds it
+// from the mount table after a plugin restart.
 type Users interface {
 	Add(id, target string)
 	// Lookup returns the id target uses.
@@ -12,6 +15,8 @@ type Users interface {
 	Remove(target string) (remaining int)
 	// Count is the number of targets using id.
 	Count(id string) int
+	// Targets lists the targets using id.
+	Targets(id string) []string
 }
 
 type memUsers struct {
@@ -101,4 +106,17 @@ func (k *keyedLock) lock(key string) func() {
 		}
 		k.mu.Unlock()
 	}
+}
+
+func (u *memUsers) Targets(id string) []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	var out []string
+	for t, i := range u.byTarget {
+		if i == id {
+			out = append(out, t)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

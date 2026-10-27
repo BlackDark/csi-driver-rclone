@@ -15,8 +15,11 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/csiserver"
 	"github.com/BlackDark/csi-driver-rclone/internal/identity"
@@ -104,8 +107,35 @@ func runNode(args []string, stderr io.Writer) error {
 	})
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+	if err := srv.Adopt(ctx); err != nil {
+		return fmt.Errorf("node: %w", err)
+	}
+	watchMountPods(ctx, cs, f.cfg, srv)
 	return csiserver.Serve(ctx, f.endpoint, log, func(g *grpc.Server) {
 		csi.RegisterIdentityServer(g, &identity.Server{Version: version})
 		csi.RegisterNodeServer(g, srv)
 	})
+}
+
+// watchMountPods feeds this node's Mount Pod changes to srv until ctx is done.
+func watchMountPods(ctx context.Context, cs kubernetes.Interface, cfg node.Config, srv *node.Server) {
+	factory := informers.NewSharedInformerFactoryWithOptions(cs, 0,
+		informers.WithNamespace(cfg.Pod.Namespace),
+		informers.WithTweakListOptions(func(o *metav1.ListOptions) { o.LabelSelector = node.MountPodSelector(cfg.NodeID) }))
+	inf := factory.Core().V1().Pods().Informer()
+	_, _ = inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(o any) { podChanged(srv, o, false) },
+		UpdateFunc: func(_, o any) { podChanged(srv, o, false) },
+		DeleteFunc: func(o any) { podChanged(srv, o, true) },
+	})
+	factory.Start(ctx.Done())
+}
+
+func podChanged(srv *node.Server, o any, deleted bool) {
+	if t, ok := o.(cache.DeletedFinalStateUnknown); ok {
+		o = t.Obj
+	}
+	if p, ok := o.(*corev1.Pod); ok {
+		srv.MountPodChanged(p, deleted)
+	}
 }

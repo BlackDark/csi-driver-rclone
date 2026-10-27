@@ -54,22 +54,40 @@ func (f *fakeFuse) count() int {
 	return len(f.mounted)
 }
 
-// fakeHandoff acts as a Mount Pod that connects and becomes ready at once.
+// fakeHandoff acts as a Mount Pod that connects and becomes ready at once, or that
+// adopts in ModeAdopt. hang: it takes the fd but never becomes ready.
 type fakeHandoff struct {
 	mu     sync.Mutex
 	serves int
+	modes  []handoff.ServerMode
+	hang   bool
 	events chan<- handoff.Event
 }
 
-func (h *fakeHandoff) Serve(ctx context.Context, _ handoff.ServerConfig, ev chan<- handoff.Event) error {
+func (h *fakeHandoff) Serve(ctx context.Context, cfg handoff.ServerConfig, ev chan<- handoff.Event) error {
 	h.mu.Lock()
 	h.serves++
+	h.modes = append(h.modes, cfg.Mode)
 	h.events = ev
+	hang := h.hang
 	h.mu.Unlock()
-	ev <- handoff.Event{Kind: handoff.EventFDSent, Conn: 1}
-	ev <- handoff.Event{Kind: handoff.EventReady, Conn: 1}
+	switch {
+	case cfg.Mode == handoff.ModeAdopt:
+		ev <- handoff.Event{Kind: handoff.EventAdopted, Conn: 1}
+	case hang:
+		ev <- handoff.Event{Kind: handoff.EventFDSent, Conn: 1}
+	default:
+		ev <- handoff.Event{Kind: handoff.EventFDSent, Conn: 1}
+		ev <- handoff.Event{Kind: handoff.EventReady, Conn: 1}
+	}
 	<-ctx.Done()
 	return nil
+}
+
+func (h *fakeHandoff) serveCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.serves
 }
 
 func (h *fakeHandoff) send(e handoff.Event) {
@@ -86,6 +104,8 @@ type harness struct {
 	ho      *fakeHandoff
 	clk     *clocktesting.FakeClock
 	dir     string
+	infos   []mount.MountInfo
+	statErr map[string]error
 }
 
 func newHarness(t *testing.T) *harness {
@@ -96,6 +116,7 @@ func newHarness(t *testing.T) *harness {
 		fuse:    &fakeFuse{mounted: map[string]fusemount.Opts{}},
 		ho:      &fakeHandoff{},
 		clk:     clocktesting.NewFakeClock(time.Unix(0, 0)),
+		statErr: map[string]error{},
 	}
 	dir, err := filepath.EvalSymlinks(t.TempDir()) // darwin: /var -> /private/var
 	if err != nil {
@@ -119,7 +140,14 @@ func newHarness(t *testing.T) *harness {
 		Kube: NewKube(h.cs, "drv"), Mounter: h.mounter, Fuse: h.fuse, Handoff: h.ho,
 		PrepareDir: func(string, int, int) error { return nil },
 		Clock:      h.clk,
-		Log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MountInfo:  func() ([]mount.MountInfo, error) { return h.infos, nil },
+		Statfs: func(p string) (Usage, error) {
+			if err := h.statErr[p]; err != nil {
+				return Usage{}, err
+			}
+			return Usage{TotalBytes: 100, AvailableBytes: 60, UsedBytes: 40}, nil
+		},
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	return h
 }

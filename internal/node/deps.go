@@ -26,6 +26,10 @@ type Kube interface {
 	DeleteSecret(ctx context.Context, name string) error
 	// CreateEvent records e in e.Namespace, which may be a workload namespace.
 	CreateEvent(ctx context.Context, e *corev1.Event) error
+	// ListPods lists pods matching the label selector.
+	ListPods(ctx context.Context, selector string) ([]corev1.Pod, error)
+	// GetPod returns nil, nil when the pod does not exist.
+	GetPod(ctx context.Context, name string) (*corev1.Pod, error)
 }
 
 // FuseMounter performs the kernel FUSE mount (package fusemount).
@@ -117,4 +121,23 @@ func (k *clientKube) CreateEvent(ctx context.Context, e *corev1.Event) error {
 		return fmt.Errorf("create event %s: %w", e.Reason, err)
 	}
 	return nil
+}
+
+func (k *clientKube) ListPods(ctx context.Context, selector string) ([]corev1.Pod, error) {
+	l, err := k.cs.CoreV1().Pods(k.ns).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return nil, fmt.Errorf("list pods: %w", err)
+	}
+	return l.Items, nil
+}
+
+func (k *clientKube) GetPod(ctx context.Context, name string) (*corev1.Pod, error) {
+	p, err := k.cs.CoreV1().Pods(k.ns).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get pod %s: %w", name, err)
+	}
+	return p, nil
 }
