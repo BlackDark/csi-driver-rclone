@@ -6,6 +6,7 @@ actionlint = "1.7.12"
 shellcheck = "0.11.0"
 helm = "4.3.1"
 kubectl = "1.37.1"
+"aqua:kubernetes-sigs/kind" = "0.33.0"
 
 [tasks.check]
 description = "Everything CI checks"
@@ -25,3 +26,14 @@ docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor=u
   golang:{{ tools.go.version }} \
   go test -tags fuse_integration -run TestFuse -count=1 -v ./internal/rclonemount/
 '''
+
+[tasks.e2e]
+description = "kind + MinIO e2e: bring up cluster, install chart, run test/e2e"
+run = [
+  "bash hack/e2e/up.sh",
+  "go test -tags e2e -count=1 -v -timeout 15m ./test/e2e/",
+]
+
+[tasks."e2e:down"]
+description = "Delete the e2e kind cluster"
+run = "kind delete cluster --name csi-rclone-e2e"

@@ -1,0 +1,64 @@
+# Single-node MinIO for e2e only; static credentials, no persistence.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: minio}
+  template:
+    metadata:
+      labels: {app: minio}
+    spec:
+      containers:
+        - name: minio
+          image: cgr.dev/chainguard/minio@sha256:e70b2b1e74d79457f808710483bd726ff364529ca30736eaa15a6ab547d3a5a7
+          args: [server, /data]
+          env:
+            - {name: MINIO_ROOT_USER, value: e2e-access}
+            - {name: MINIO_ROOT_PASSWORD, value: e2e-secret-key}
+          ports:
+            - containerPort: 9000
+          readinessProbe:
+            httpGet: {path: /minio/health/ready, port: 9000}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  selector: {app: minio}
+  ports:
+    - port: 9000
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: make-bucket
+  namespace: minio
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: cgr.dev/chainguard/minio-client@sha256:799a60aa839c0d79b53f1dccdddc974d0fe94282cca712fbfbad3b196f88d0ee
+          args: [mb, --ignore-existing, e2e/e2e-bucket]
+          env:
+            - {name: HOME, value: /tmp}
+            - {name: MC_HOST_e2e, value: "http://e2e-access:e2e-secret-key@minio.minio.svc:9000"}
