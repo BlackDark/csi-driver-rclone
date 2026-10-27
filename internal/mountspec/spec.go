@@ -70,6 +70,7 @@ type Spec struct {
 	Resources      Resources
 	CacheVolume    string // raw JSON volume source, empty for hostPath default
 	ReadOnly       bool
+	Mode           Mode
 	Identity       string // hex sha256 of everything that defines the shared mount
 }
 
@@ -111,6 +112,7 @@ func Resolve(in Input) (Spec, error) {
 		Resources:      resolveResources(ctx),
 		CacheVolume:    cache,
 		ReadOnly:       in.ReadOnly,
+		Mode:           in.Mode,
 	}
 	s.Identity = identity(in.VolumeID, s)
 	return s, nil
