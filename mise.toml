@@ -1,0 +1,16 @@
+[tools]
+go = "1.27.3"
+"aqua:golangci/golangci-lint" = "2.15.0"
+"aqua:zizmorcore/zizmor" = "1.31.1"
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
+
+[tasks.check]
+description = "Everything CI checks"
+run = [
+  # go list skips gitignored refs/ (own go.mod); raw block escapes mise templating
+  '{% raw %}out=$(gofmt -l $(go list -f "{{.Dir}}" ./...)); test -z "$out" || { echo "$out"; exit 1; }{% endraw %}',
+  "go vet ./...",
+  "golangci-lint run",
+  "go test ./...",
+]

@@ -1,0 +1,82 @@
+// From BlackDark/agent-presets templates/renovate.template.json5.
+// Repo settings: enable "Allow auto-merge" and require the CI status checks on main,
+// otherwise platform automerge lands PRs before CI ran.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:best-practices", // recommended + digest pins for Docker images and GitHub Actions
+    "customManagers:githubActionsVersions", // `# renovate: datasource=… depName=…` comments in workflows
+    ":prConcurrentLimitNone",
+    ":prHourlyLimitNone",
+  ],
+  labels: ["dependencies"],
+  semanticCommits: "enabled",
+  timezone: "Europe/Berlin",
+
+  // Weekly: branches are created/updated Monday early morning only.
+  schedule: ["before 4am on monday"],
+
+  // With a schedule, Renovate's own automerge only runs inside the window too, so a PR that turns
+  // green later would wait a week. Platform automerge (GitHub native) merges it as soon as CI passes.
+  updateNotScheduled: false,
+  platformAutomerge: true,
+
+  separateMajorMinor: true,
+  separateMultipleMajor: true,
+
+  // Go: keep go.sum tidy (CI's `go mod tidy -diff` stays green); rewrite import paths on /vN majors.
+  postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
+
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
+  },
+
+  // Later rules override earlier ones: general first, specific after.
+  packageRules: [
+    {
+      description: "Group and automerge patch, pin and digest updates",
+      matchUpdateTypes: ["patch", "pin", "pinDigest", "digest"],
+      groupName: "all patch/pin/digest updates",
+      groupSlug: "all-patch-pin-digest",
+      automerge: true,
+    },
+    {
+      description: "Group and automerge minor updates",
+      matchUpdateTypes: ["minor"],
+      groupName: "all minor updates",
+      groupSlug: "all-minor",
+      automerge: true,
+    },
+    {
+      description: "0.x: minor may break, review by hand",
+      matchUpdateTypes: ["minor"],
+      matchCurrentVersion: "/^v?0\\./",
+      groupName: null,
+      automerge: false,
+    },
+    {
+      // mise, go.mod and golang images are separate managers; ungrouped, one bump lands alone
+      // and the versions drift apart.
+      description: "Go toolchain (mise + go.mod + golang images) in one PR",
+      matchManagers: ["mise", "gomod", "dockerfile", "docker-compose"],
+      matchPackageNames: ["go", "golang", "docker.io/library/golang"],
+      groupName: "go toolchain",
+      groupSlug: "go-toolchain",
+      automerge: true,
+    },
+    {
+      // Renovate leaves the go.mod go directive behind the grouped toolchain; this is an app.
+      description: "Apps: move the go.mod go directive with the toolchain",
+      matchManagers: ["gomod"],
+      matchDepTypes: ["golang"],
+      rangeStrategy: "bump",
+    },
+    {
+      description: "Majors: one PR each, merged by hand",
+      matchUpdateTypes: ["major"],
+      addLabels: ["major"],
+      automerge: false,
+    },
+  ],
+}
