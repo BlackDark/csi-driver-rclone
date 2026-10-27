@@ -230,3 +230,39 @@ func TestMountPodCrash(t *testing.T) {
 	deletePod(ctx, t, cs, again.Name)
 	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
 }
+
+// After a plugin restart the adopted Mount Pod still knows its Mount Spec (owned
+// Secret) and its workload pods (users annotation): a crash is recreated at once and
+// reported to the pod.
+func TestAdoptedMountPodCrash(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cs := client(t)
+	setupNamespace(ctx, t, cs)
+	createVolume(ctx, t, cs, staticPV("e2e-adoptcrash", map[string]string{
+		"remote": "minio", "remotePath": "e2e-bucket/adoptcrash", "vfs-cache-mode": "writes",
+	}))
+	pod := workload("e2e-adoptcrash", "e2e-adoptcrash", ioLoop)
+	mustCreatePod(ctx, t, cs, pod)
+	waitLogContains(ctx, t, cs, appNS, pod.Name, "IO-OK 3")
+	old := soleMountPod(ctx, t, cs)
+
+	plugin := nodePlugin(ctx, t, cs)
+	if err := cs.CoreV1().Pods(driverNS()).Delete(ctx, plugin.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	replaced(ctx, t, cs, plugin.UID)
+	ioContinues(ctx, t, cs, pod.Name, lastOK(podLog(ctx, t, cs, pod.Name)))
+
+	killRclone(ctx, t, cs, old.Spec.NodeName)
+	poll(ctx, t, "MountLost Event on the workload pod", func() (bool, error) {
+		return hasEvent(ctx, cs, appNS, pod.Name, "MountLost")
+	})
+	poll(ctx, t, "Mount Pod recreated without a new publish", func() (bool, error) {
+		p, err := cs.CoreV1().Pods(driverNS()).Get(ctx, old.Name, metav1.GetOptions{})
+		return err == nil && p.UID != old.UID && p.Status.Phase == corev1.PodRunning, nil
+	})
+	t.Log("adopted Mount Pod crash: recreated at once, workload pod notified")
+	deletePod(ctx, t, cs, pod.Name)
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+}
