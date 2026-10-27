@@ -23,3 +23,7 @@
 **Unrestricted Options**: An admin-only opt-in that accepts any rclone option, not only allowlisted ones.
 
 **Handoff**: The node plugin passing the FUSE fd it mounted to a Mount Pod over a unix socket. The socket connection stays open afterwards as the Mount Pod's liveness signal.
+
+**Adoption**: A restarted node plugin taking over the running Mount Pods on its node. It rebuilds their users from the mount table, and each Mount Pod reconnects with `adopt`.
+
+**Mount Lost**: A Mount Pod that stopped while the node plugin did not stop it. Its binds return `ENOTCONN` until their pods restart. The plugin emits a `MountLost` Event and recreates the Mount Pod.

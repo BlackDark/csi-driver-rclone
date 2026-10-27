@@ -60,7 +60,7 @@ A Kubernetes CSI driver, `rclone.csi.blackdark.github.io`, that mounts any rclon
 16. As an operator, I want a running Mount Pod to keep its image until it is replaced (on node reboot, drain, or reuse after the Linger expires), so that upgrades never restart a live mount.
 17. As an operator, I want a metric showing the version each Mount Pod runs, so that I can see which mounts still use an old image.
 18. As an operator, I want a crashed Mount Pod to be recreated, and new publishes to be blocked until it is ready, so that a mount failure is visible and recovers.
-19. As an operator, I want a stale mount ("transport endpoint is not connected") detected and reported as CSI `VOLUME_CONDITION` abnormal, so that I can act on it.
+19. As an operator, I want a stale mount ("transport endpoint is not connected") detected and reported as CSI volume health `INACCESSIBLE` (CSI 1.13's successor of `VOLUME_CONDITION`), so that I can act on it.
 20. As an operator, I want publish to be idempotent, so that kubelet retries never double-mount.
 21. As an operator, I want publish bounded by a timeout, with any orphaned in-flight mount cleaned up, so that a hung remote never wedges the node plugin.
 
@@ -135,7 +135,7 @@ A Kubernetes CSI driver, `rclone.csi.blackdark.github.io`, that mounts any rclon
 ### Components
 
 - **One binary with three modes**: `node`, `controller` and `mount`. One image.
-- **Node plugin** (DaemonSet). Implements Identity and Node: `NodePublishVolume`, `NodeUnpublishVolume`, `NodeGetCapabilities`, `NodeGetInfo` and `NodeGetVolumeStats`. Capabilities: `VOLUME_CONDITION` and `GET_VOLUME_STATS`, nothing else.
+- **Node plugin** (DaemonSet). Implements Identity and Node: `NodePublishVolume`, `NodeUnpublishVolume`, `NodeGetCapabilities`, `NodeGetInfo`, `NodeGetVolumeStats` and `NodeGetVolumeHealth`. Capabilities: `GET_VOLUME_HEALTH` (`NodeGetVolumeHealth`, which replaced `VOLUME_CONDITION` in CSI 1.13) and `GET_VOLUME_STATS`, nothing else.
   - No `STAGE_UNSTAGE` in v1. Sharing is done through the Mount Pod, not through kubelet staging.
   - Responsibilities: resolve the Mount Spec, ensure the Mount Pod for (volume, node), wait until it is ready, bind-mount its mount (with an optional read-only remount) into the target path, and track users so the Linger can start.
   - Privileged, with Bidirectional propagation on the kubelet dir and no hostNetwork.

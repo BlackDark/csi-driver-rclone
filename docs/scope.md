@@ -9,10 +9,12 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 - The same volume can be used on several nodes (ReadWriteMany). Each node gets its own Mount Pod and Cache.
 - Read-only per pod. The bind mount is read-only even when the Mount Pod is read-write.
 - Any rclone backend, including nested remotes (crypt over OneDrive, union) through `configData`. Encrypted configs work through `configPassword`.
-- Mounts survive node plugin restarts and driver upgrades.
+- Mounts survive node plugin restarts and driver upgrades: deleting the plugin pod, a DaemonSet rollout or `helm upgrade`. IO in workload pods carries on. After the restart, the plugin adopts the running Mount Pods and rebuilds their users from the mount table.
+- A crashed or deleted Mount Pod does not survive for the pods using it. Their mount returns `ENOTCONN` until the pod restarts (ADR 0003). The driver detects the crash, reports the volume `Inaccessible` in `pod.status.volumeHealth` (`CSIVolumeHealth` feature gate), emits `MountLost` Events, and recreates the Mount Pod, so restarted and new pods mount again. After a plugin restart, `MountLost` goes only to the Mount Pod, and an adopted Mount Pod that crashes is recreated on the next publish.
+- Node reboot: mounts are gone with the node. kubelet republishes, and new Mount Pods start.
 - The Cache survives Mount Pod replacement. It lives on hostPath by default, or on any volume source set in `cacheVolume`.
 - The upload queue drains before a Mount Pod stops, bounded by a timeout. A timed-out drain emits a `DrainTimeout` Event on the Mount Pod and the last workload pod.
-- Prometheus metrics: CSI operations, per-volume VFS and transfer stats, and mount health (also reported as CSI `VOLUME_CONDITION`). ServiceMonitor, PodMonitor and Grafana dashboard are optional.
+- Prometheus metrics: CSI operations, per-volume VFS and transfer stats, and mount health (also reported through CSI `NodeGetVolumeHealth`, the successor of `VOLUME_CONDITION`). ServiceMonitor, PodMonitor and Grafana dashboard are optional.
 
 ## Security posture
 
@@ -35,7 +37,7 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 | Capacity, quotas, snapshots, cloning, expansion | Remotes have no block semantics. | None. |
 | mergerfs or composing with other drivers | Out of scope. | rclone `union` remote. Composition will be designed in `csi-driver-mergerfs`. |
 | Windows nodes, Kubernetes < 1.29 | Not targeted. | None. |
-| Restarting a live Mount Pod on driver upgrade | It would break running pods. | It upgrades on node reboot, drain, or reuse after the Linger expires. |
+| Restarting a live Mount Pod on driver upgrade | It would break running pods. A FUSE connection cannot be handed to a new rclone (ADR 0003). | It upgrades on node reboot, drain, or reuse after the Linger expires. |
 
 ## Ownership
 
