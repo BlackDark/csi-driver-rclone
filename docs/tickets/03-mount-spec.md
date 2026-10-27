@@ -4,11 +4,11 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Credentials or `configData` in volume context are rejected with the key named
-- [ ] Unknown option keys are rejected with the key named; `allowAllOptions` lifts this except for Ephemeral
-- [ ] `log-file`, `rc*`, `daemon*`, `cache-dir` and `config` are always rejected
-- [ ] Two volumes with the same remote name resolve to non-colliding remotes
-- [ ] The media-stack example from the spec resolves to the expected Mount Spec
-- [ ] Error messages never contain secret values
+- [x] Credentials or `configData` in volume context are rejected with the key named
+- [x] Unknown option keys are rejected with the key named; `allowAllOptions` lifts this except for Ephemeral
+- [x] `log-file`, `rc*`, `daemon*`, `cache-dir` and `config` are always rejected
+- [x] Two volumes with the same remote name resolve to non-colliding remotes
+- [x] The media-stack example from the spec resolves to the expected Mount Spec
+- [x] Error messages never contain secret values

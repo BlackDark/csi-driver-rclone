@@ -26,7 +26,7 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 | Not supported | Reason | Alternative |
 |---|---|---|
 | Credentials in PV `volumeAttributes` or StorageClass parameters | Anyone who can read PVs could read them. | Credential Secret through `nodePublishSecretRef` |
-| Arbitrary rclone flags by default | A PV author could inject options. | Allowlist. Admins can opt into Unrestricted Options. Never for Inline Volumes. |
+| Arbitrary rclone flags by default | A PV author could inject options. | Allowlist. Admins can opt into Unrestricted Options. Never for Inline Volumes, which accept a smaller subset and no `cacheVolume` or Mount Pod resources. Keys: [volume parameters](reference/volume-parameters.md). |
 | Backend flags (`--onedrive-*`, `--s3-*`) as Mount Options | There are hundreds of them, and they belong to the Remote. | Put them in `configData` (`chunk_size = 5M`, `delta = true`). |
 | Per-pod uid, gid or `fsGroup` on a shared mount | One FUSE mount has one ownership. | Set `uid`, `gid` and `umask` per volume. See [Ownership](#ownership). |
 | Consistency across nodes | Each node has its own Cache. Writes held by `vfs-write-back` are invisible to other nodes until uploaded and polled. | Write from one node, or use a short `vfs-write-back` and `poll-interval`. |
