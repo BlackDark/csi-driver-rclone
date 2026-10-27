@@ -28,4 +28,4 @@ This is the simplest option, but every plugin upgrade breaks every mount. Reject
 
 - The plugin needs RBAC to create and delete pods and Secrets, in the driver namespace only.
 - Credentials are copied into a Secret owned by the Mount Pod and garbage-collected with it.
-- The Mount Pod's privilege depends on whether FUSE fd passing works. See the open spike.
+- The Mount Pod's privilege depends on whether FUSE fd passing works. It runs unprivileged; see ADR 0002.
