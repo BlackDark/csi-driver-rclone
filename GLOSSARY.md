@@ -8,7 +8,7 @@
 
 **Dynamic Volume**: A PV created from a StorageClass. Each PVC gets its own templated subpath under the StorageClass Remote. Deleting the PVC leaves the remote data untouched.
 
-**Inline Volume**: A volume declared directly in a pod spec, with no PV or PVC. Its lifetime is the pod's.
+**Inline Volume**: A volume declared directly in a pod spec, with no PV or PVC. Its lifetime is the pod's, and it has its own Mount Pod and Cache, never shared with other pods.
 
 **Mount Pod**: The pod that runs one rclone mount for one volume on one node. Every workload pod on that node using the volume shares it.
 

@@ -4,6 +4,6 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] e2e: an inline mount works; `allowAllOptions` and non-subset keys are rejected with an event
+- [x] e2e: an inline mount works; `allowAllOptions` and non-subset keys are rejected with an event

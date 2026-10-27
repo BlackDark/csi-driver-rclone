@@ -10,9 +10,10 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 - Read-only per pod. The bind mount is read-only even when the Mount Pod is read-write.
 - Any rclone backend, including nested remotes (crypt over OneDrive, union) through `configData`. Encrypted configs work through `configPassword`.
 - Mounts survive node plugin restarts and driver upgrades: deleting the plugin pod, a DaemonSet rollout or `helm upgrade`. IO in workload pods carries on. After the restart, the plugin adopts the running Mount Pods and rebuilds their users from the mount table.
-- A crashed or deleted Mount Pod does not survive for the pods using it. Their mount returns `ENOTCONN` until the pod restarts (ADR 0003). The driver detects the crash, reports the volume `Inaccessible` in `pod.status.volumeHealth` (`CSIVolumeHealth` feature gate), emits `MountLost` Events, and recreates the Mount Pod, so restarted and new pods mount again. After a plugin restart, `MountLost` goes only to the Mount Pod, and an adopted Mount Pod that crashes is recreated on the next publish.
+- A crashed or deleted Mount Pod does not survive for the pods using it. Their mount returns `ENOTCONN` until the pod restarts (ADR 0003). The driver detects the crash, reports the volume `Inaccessible` in `pod.status.volumeHealth` (`CSIVolumeHealth` feature gate), emits `MountLost` Events, and recreates the Mount Pod, so restarted and new pods mount again. This also holds after a plugin restart: the adopted Mount Pod's spec and workload pods are read back from its Secret and annotation.
 - Node reboot: mounts are gone with the node. kubelet republishes, and new Mount Pods start.
-- The Cache survives Mount Pod replacement. It lives on hostPath by default, or on any volume source set in `cacheVolume`.
+- The Cache survives Mount Pod replacement. It lives on hostPath by default, one dir per volume, or on any volume source set in `cacheVolume`. A changed Mount Spec waits until the Mount Pod of the old spec is released, so two rclone processes never share a Cache.
+- Inline Volumes are per pod: each gets its own Mount Pod and Cache, never shared, and the Cache is removed with the Mount Pod.
 - The upload queue drains before a Mount Pod stops, bounded by a timeout. A timed-out drain emits a `DrainTimeout` Event on the Mount Pod and the last workload pod.
 - Prometheus metrics: CSI operations, per-volume VFS and transfer stats, and mount health (also reported through CSI `NodeGetVolumeHealth`, the successor of `VOLUME_CONDITION`). ServiceMonitor, PodMonitor and Grafana dashboard are optional.
 
@@ -20,7 +21,7 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 
 - The node plugin is the only privileged component, because it needs Bidirectional propagation for bind mounts. It does not use hostNetwork.
 - The controller runs unprivileged and non-root, with a read-only root filesystem, no hostPath and no Secret access. The Mount Pod is unprivileged where possible: it depends on the fd-passing spike. Images are distroless and non-root.
-- RBAC: pods and Secrets only in the driver namespace. No cluster-wide Secret access. Events cluster-wide (create, patch), so drain timeouts show on the workload pod. The controller has only what external-provisioner needs: PVs, PVCs, StorageClasses, Events, and leases in the driver namespace.
+- RBAC: pods and Secrets only in the driver namespace (pods also `patch`, for the users annotation). No cluster-wide Secret access. Events cluster-wide (create, patch), so drain timeouts show on the workload pod. The controller has only what external-provisioner needs: PVs, PVCs, StorageClasses, Events, and leases in the driver namespace.
 - Mount Pods run at `system-node-critical` priority, so the apps using them are evicted first. Resources are set per StorageClass or PV, with a default request of 64Mi and no memory limit.
 
 ## Not possible, by design

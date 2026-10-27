@@ -4,7 +4,7 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] e2e: a cached file is still in the Cache after the Mount Pod is recreated
-- [ ] `cacheVolume` is rendered into the Mount Pod; the builder tests cover both sources
+- [x] e2e: a cached file is still in the Cache after the Mount Pod is recreated
+- [x] `cacheVolume` is rendered into the Mount Pod; the builder tests cover both sources
