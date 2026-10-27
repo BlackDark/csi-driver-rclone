@@ -1,0 +1,26 @@
+{{- with .Values.storageClass }}
+{{- if .enabled }}
+# Deleting a PVC removes only the PV object; data on the remote stays (DeleteVolume is a no-op).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "csi-driver-rclone.labels" $ | nindent 4 }}
+  {{- if .default }}
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+  {{- end }}
+provisioner: {{ include "csi-driver-rclone.driverName" $ }}
+reclaimPolicy: {{ .reclaimPolicy }}
+volumeBindingMode: Immediate
+allowVolumeExpansion: false
+parameters:
+  {{- $_ := required "storageClass.parameters.remotePath is required" .parameters.remotePath }}
+  {{- range $k, $v := .parameters }}
+  {{ $k | quote }}: {{ $v | quote }}
+  {{- end }}
+  csi.storage.k8s.io/node-publish-secret-name: {{ required "storageClass.secret.name is required" .secret.name | quote }}
+  csi.storage.k8s.io/node-publish-secret-namespace: {{ required "storageClass.secret.namespace is required" .secret.namespace | quote }}
+{{- end }}
+{{- end }}

@@ -28,3 +28,9 @@ app.kubernetes.io/component: node
 {{- define "csi-driver-rclone.pluginDir" -}}
 {{ .Values.kubeletDir }}/plugins/{{ include "csi-driver-rclone.driverName" . }}
 {{- end }}
+
+{{- define "csi-driver-rclone.controllerSelectorLabels" -}}
+app.kubernetes.io/name: csi-driver-rclone
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: controller
+{{- end }}

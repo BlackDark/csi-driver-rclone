@@ -3,4 +3,4 @@ csi-driver-rclone {{ .Chart.AppVersion }} installed in namespace {{ .Release.Nam
 The node plugin is privileged: label the namespace for Pod Security Admission:
   kubectl label namespace {{ .Release.Namespace }} pod-security.kubernetes.io/enforce=privileged
 
-Mount Pods run in this namespace. Usage: https://github.com/BlackDark/csi-driver-rclone#quickstart
+Mount Pods and the unprivileged controller (Dynamic Volumes) run in this namespace. Usage: https://github.com/BlackDark/csi-driver-rclone#quickstart

@@ -35,6 +35,42 @@ node:
       memory: 256Mi
   podAnnotations: {}
 
+# Controller: unprivileged Deployment behind external-provisioner, for Dynamic Volumes.
+controller:
+  # One active replica; extra replicas wait on the leader election lease.
+  replicas: 1
+  # Pod port the liveness-probe sidecar serves on.
+  livenessProbePort: 9808
+  priorityClassName: ""
+  tolerations: []
+  nodeSelector: {}
+  affinity: {}
+  resources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+    limits:
+      memory: 64Mi
+  podAnnotations: {}
+
+# Optional StorageClass for Dynamic Volumes. Each PVC mounts remotePath with
+# ${pvc.namespace}, ${pvc.name} and ${pv.name} filled in; the secret must not set remotePath.
+storageClass:
+  enabled: false
+  name: rclone
+  default: false
+  # Delete removes only the PV object: DeleteVolume never touches remote data.
+  reclaimPolicy: Delete
+  # Credential Secret for NodePublishVolume; namespace may be "${pvc.namespace}".
+  secret:
+    name: ""
+    namespace: ""
+  # Volume context keys (docs/reference/volume-parameters.md); remotePath is required.
+  parameters: {}
+  #   remote: s3
+  #   remotePath: my-bucket/${pvc.namespace}/${pvc.name}
+  #   vfs-cache-mode: writes
+
 # Mount Pods are created by the node plugin, one per (volume, node).
 mountPod:
   # Non-root uid/gid the Mount Pod runs as (ADR 0002).
@@ -61,6 +97,14 @@ sidecars:
         memory: 16Mi
       limits:
         memory: 64Mi
+  provisioner:
+    image: registry.k8s.io/sig-storage/csi-provisioner:v6.4.0@sha256:6ebe60fd8ed67a7f8a90d34402e9e706b274e53612d6fa5fbb8285728db622e2
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
   livenessProbe:
     image: registry.k8s.io/sig-storage/livenessprobe:v2.19.0@sha256:06da0d5b8908072f2e4522692aee8dc119fba7247a9658497e1153992cd777e9
     # Pod port the probe serves on; the pod has no hostNetwork.
