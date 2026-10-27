@@ -10,7 +10,7 @@
 
 ## Status
 
-Pre-alpha: Static Volumes work; dynamic and inline volumes do not yet. No image or chart is published yet, so build both from source. What v1 covers: [docs/scope.md](docs/scope.md).
+Pre-alpha: Static Volumes work, with pods on one node sharing one Mount Pod that lingers `mountPod.linger` (default 2m) after the last pod leaves and drains pending uploads on stop; dynamic and inline volumes do not yet. No image or chart is published yet, so build both from source. What v1 covers: [docs/scope.md](docs/scope.md).
 
 ## Quickstart
 

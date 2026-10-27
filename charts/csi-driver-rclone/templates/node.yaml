@@ -57,6 +57,7 @@ spec:
             - --mount-priority-class={{ .Values.mountPod.priorityClassName }}
             - --mount-tolerations={{ .Values.mountPod.tolerations | toJson }}
             - --publish-timeout={{ .Values.node.publishTimeout }}
+            - --linger={{ .Values.mountPod.linger }}
             - --drain-timeout={{ .Values.mountPod.drainTimeout }}
             - --unmount-wait={{ .Values.mountPod.unmountWait }}
             - --log-level={{ .Values.logLevel }}

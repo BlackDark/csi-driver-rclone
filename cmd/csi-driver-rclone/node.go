@@ -50,6 +50,7 @@ func parseNodeFlags(args []string, stderr io.Writer) (nodeFlags, error) {
 	fs.StringVar(&p.PriorityClassName, "mount-priority-class", "system-node-critical", "Mount Pod priorityClassName")
 	fs.StringVar(&f.tolerations, "mount-tolerations", "", "Mount Pod tolerations as a JSON list")
 	fs.DurationVar(&f.cfg.PublishTimeout, "publish-timeout", 2*time.Minute, "bound on waiting for a Mount Pod to be ready")
+	fs.DurationVar(&f.cfg.Linger, "linger", 2*time.Minute, "how long an unused Mount Pod stays up; 0 stops it at once")
 	fs.DurationVar(&p.DrainTimeout, "drain-timeout", 5*time.Minute, "Mount Pod upload drain bound on stop")
 	fs.DurationVar(&p.UnmountWait, "unmount-wait", 30*time.Second, "Mount Pod wait for the external unmount after draining")
 	fs.TextVar(&f.logLevel, "log-level", slog.LevelInfo, "log level")

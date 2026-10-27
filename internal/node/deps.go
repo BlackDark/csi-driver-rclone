@@ -14,7 +14,7 @@ import (
 	"github.com/BlackDark/csi-driver-rclone/internal/handoff"
 )
 
-// Kube is the node plugin's API surface: Pods and Secrets in the driver namespace.
+// Kube is the node plugin's API surface: Pods and Secrets in the driver namespace, Events anywhere.
 type Kube interface {
 	// CreatePod returns the existing pod when one with the same name exists.
 	CreatePod(ctx context.Context, pod *corev1.Pod) (*corev1.Pod, error)
@@ -24,6 +24,8 @@ type Kube interface {
 	CreateSecret(ctx context.Context, s *corev1.Secret) error
 	// DeleteSecret treats NotFound as success.
 	DeleteSecret(ctx context.Context, name string) error
+	// CreateEvent records e in e.Namespace, which may be a workload namespace.
+	CreateEvent(ctx context.Context, e *corev1.Event) error
 }
 
 // FuseMounter performs the kernel FUSE mount (package fusemount).
@@ -106,6 +108,13 @@ func (k *clientKube) DeleteSecret(ctx context.Context, name string) error {
 	err := k.cs.CoreV1().Secrets(k.ns).Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("delete secret %s: %w", name, err)
+	}
+	return nil
+}
+
+func (k *clientKube) CreateEvent(ctx context.Context, e *corev1.Event) error {
+	if _, err := k.cs.CoreV1().Events(e.Namespace).Create(ctx, e, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create event %s: %w", e.Reason, err)
 	}
 	return nil
 }

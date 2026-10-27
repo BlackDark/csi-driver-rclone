@@ -16,6 +16,8 @@
 
 **Linger**: How long an unused Mount Pod stays up after the last workload pod on its node stops using it.
 
+**Drain**: A stopping Mount Pod waiting for its upload queue to empty, bounded by the drain timeout. A timeout leaves pending writes in the Cache and emits a `DrainTimeout` Event.
+
 **Mount Option**: An rclone setting, such as VFS cache mode or dir-cache-time, applied to a mount. Only allowlisted options are accepted.
 
 **Unrestricted Options**: An admin-only opt-in that accepts any rclone option, not only allowlisted ones.

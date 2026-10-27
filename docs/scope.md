@@ -11,14 +11,14 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 - Any rclone backend, including nested remotes (crypt over OneDrive, union) through `configData`. Encrypted configs work through `configPassword`.
 - Mounts survive node plugin restarts and driver upgrades.
 - The Cache survives Mount Pod replacement. It lives on hostPath by default, or on any volume source set in `cacheVolume`.
-- The upload queue drains before a Mount Pod stops, bounded by a timeout.
+- The upload queue drains before a Mount Pod stops, bounded by a timeout. A timed-out drain emits a `DrainTimeout` Event on the Mount Pod and the last workload pod.
 - Prometheus metrics: CSI operations, per-volume VFS and transfer stats, and mount health (also reported as CSI `VOLUME_CONDITION`). ServiceMonitor, PodMonitor and Grafana dashboard are optional.
 
 ## Security posture
 
 - The node plugin is the only privileged component, because it needs Bidirectional propagation for bind mounts. It does not use hostNetwork.
 - The controller and the Mount Pod are unprivileged where possible: the Mount Pod depends on the fd-passing spike. Images are distroless and non-root.
-- RBAC: pods and Secrets only in the driver namespace. No cluster-wide Secret access.
+- RBAC: pods and Secrets only in the driver namespace. No cluster-wide Secret access. Events cluster-wide (create, patch), so drain timeouts show on the workload pod.
 - Mount Pods run at `system-node-critical` priority, so the apps using them are evicted first. Resources are set per StorageClass or PV, with a default request of 64Mi and no memory limit.
 
 ## Not possible, by design

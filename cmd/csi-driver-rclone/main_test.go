@@ -49,7 +49,7 @@ func TestNodeFlags(t *testing.T) {
 	}
 	p := f.cfg.Pod
 	if f.cfg.NodeID != "n1" || p.Namespace != "drv" || p.UID != 65532 || len(p.Tolerations) != 1 ||
-		p.KubeletDir != "/var/lib/kubelet" || f.cfg.PublishTimeout.String() != "2m0s" {
+		p.KubeletDir != "/var/lib/kubelet" || f.cfg.PublishTimeout.String() != "2m0s" || f.cfg.Linger.String() != "2m0s" {
 		t.Errorf("flags: %+v", f.cfg)
 	}
 	for _, args := range [][]string{{}, {"--mount-image=img", "--mount-uid=0"}, {"--mount-image=img", "--mount-tolerations=x"}} {

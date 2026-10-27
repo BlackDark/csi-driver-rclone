@@ -42,7 +42,9 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "target %s: %v", target, err)
 	}
-	if mounted && s.getMount(id) != nil {
+	if m := s.getMount(id); m != nil && mounted {
+		s.cancelLinger(m)
+		m.lastPod = workloadPod(req.GetVolumeContext())
 		s.deps.Users.Add(id, target)
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
@@ -57,6 +59,7 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if err := s.deps.Mounter.Mount(m.fuseDir, target, "", opts); err != nil {
 		return nil, status.Errorf(codes.Internal, "bind mount %s: %v", target, err)
 	}
+	m.lastPod = workloadPod(req.GetVolumeContext())
 	s.deps.Users.Add(id, target)
 	return &csi.NodePublishVolumeResponse{}, nil
 }
@@ -108,6 +111,7 @@ func (s *Server) prepareTarget(target string) (bool, error) {
 func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec mountspec.Spec) (*fuseMount, error) {
 	if m := s.getMount(id); m != nil {
 		if !m.isGone() {
+			s.cancelLinger(m)
 			return m, nil
 		}
 		// Mount Pod died; recovery of existing binds is ticket 06.
@@ -133,6 +137,7 @@ func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec moun
 		err = fmt.Errorf("mount pod %s is still terminating", pod.Name)
 	}
 	if err == nil {
+		m.podUID = created.UID
 		owned := mountpod.OwnedBy(secret, created)
 		err = s.deps.Kube.CreateSecret(ctx, &owned)
 	}
@@ -158,6 +163,7 @@ func publishError(err error) error {
 
 // abort removes a mount that never became ready or whose Mount Pod died.
 func (s *Server) abort(m *fuseMount) {
+	s.cancelLinger(m)
 	ctx, cancel := context.WithTimeout(context.Background(), kubeCallTimeout)
 	defer cancel()
 	if err := s.deps.Kube.DeletePod(ctx, m.name); err != nil {

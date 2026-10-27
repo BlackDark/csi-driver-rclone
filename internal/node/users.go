@@ -10,6 +10,8 @@ type Users interface {
 	Lookup(target string) (id string, ok bool)
 	// Remove forgets target and reports how many targets still use its id.
 	Remove(target string) (remaining int)
+	// Count is the number of targets using id.
+	Count(id string) int
 }
 
 type memUsers struct {
@@ -50,6 +52,12 @@ func (u *memUsers) Remove(target string) int {
 		delete(u.count, id)
 	}
 	return n
+}
+
+func (u *memUsers) Count(id string) int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.count[id]
 }
 
 func (u *memUsers) Lookup(target string) (string, bool) {

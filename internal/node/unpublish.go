@@ -31,14 +31,14 @@ func (s *Server) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 		unlock()
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
-	if err := s.release(ctx, m, unlock); err != nil {
+	if err := s.startLinger(ctx, m, unlock); err != nil {
 		return nil, status.Errorf(codes.Internal, "release mount: %v", err)
 	}
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
-// release is the Linger seam (ticket 05): for now the Mount Pod is deleted at once.
-// It owns unlock; the rest of the teardown runs in the background under the lock.
+// release deletes the Mount Pod. It owns unlock; the rest of the teardown runs in the
+// background under the lock.
 func (s *Server) release(ctx context.Context, m *fuseMount, unlock func()) error {
 	if err := s.deps.Kube.DeletePod(ctx, m.name); err != nil {
 		unlock()
@@ -58,12 +58,19 @@ func (s *Server) release(ctx context.Context, m *fuseMount, unlock func()) error
 func (s *Server) finishTeardown(m *fuseMount) {
 	t := time.NewTimer(s.teardownTimeout())
 	defer t.Stop()
+	timedOut := false
 	select {
 	case <-m.drained:
+		timedOut = m.drainTimedOut
+		s.deps.Log.Info("mount pod drain result", "id", m.id, "timedOut", timedOut)
 	case <-m.gone:
 	case <-m.served:
 	case <-t.C:
+		timedOut = true
 		s.deps.Log.Warn("mount pod drain result not received", "id", m.id)
+	}
+	if timedOut {
+		s.reportDrainTimeout(m)
 	}
 	s.stopMount(m)
 	ctx, cancel := context.WithTimeout(context.Background(), kubeCallTimeout)

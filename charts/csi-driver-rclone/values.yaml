@@ -41,7 +41,11 @@ mountPod:
   uid: 65532
   gid: 65532
   priorityClassName: system-node-critical
-  # Bound on draining pending uploads when a Mount Pod stops.
+  # How long an unused Mount Pod stays up after the last workload pod on its node
+  # leaves; a publish within it reuses the Mount Pod. 0s stops it at once.
+  linger: 2m
+  # Bound on draining pending uploads when a Mount Pod stops. Its
+  # terminationGracePeriodSeconds is drainTimeout + unmountWait + 10s.
   drainTimeout: 5m
   # Mount Pod wait for the node plugin's unmount after draining.
   unmountWait: 30s

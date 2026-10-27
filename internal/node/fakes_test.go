@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/mount-utils"
+	clocktesting "k8s.io/utils/clock/testing"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/fusemount"
 	"github.com/BlackDark/csi-driver-rclone/internal/handoff"
@@ -79,6 +80,7 @@ type harness struct {
 	mounter *mount.FakeMounter
 	fuse    *fakeFuse
 	ho      *fakeHandoff
+	clk     *clocktesting.FakeClock
 	dir     string
 }
 
@@ -89,6 +91,7 @@ func newHarness(t *testing.T) *harness {
 		mounter: mount.NewFakeMounter(nil),
 		fuse:    &fakeFuse{mounted: map[string]fusemount.Opts{}},
 		ho:      &fakeHandoff{},
+		clk:     clocktesting.NewFakeClock(time.Unix(0, 0)),
 	}
 	dir, err := filepath.EvalSymlinks(t.TempDir()) // darwin: /var -> /private/var
 	if err != nil {
@@ -111,6 +114,7 @@ func newHarness(t *testing.T) *harness {
 	h.srv = New(cfg, Deps{
 		Kube: NewKube(h.cs, "drv"), Mounter: h.mounter, Fuse: h.fuse, Handoff: h.ho,
 		PrepareDir: func(string, int, int) error { return nil },
+		Clock:      h.clk,
 		Log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	return h

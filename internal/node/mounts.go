@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/clock"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/fusemount"
 	"github.com/BlackDark/csi-driver-rclone/internal/handoff"
@@ -31,6 +34,13 @@ type fuseMount struct {
 	goneOnce             sync.Once
 	stopServe            context.CancelFunc
 	served               chan struct{} // closed when Serve returned
+	drainTimedOut        bool          // set before drained is closed
+
+	// Guarded by the <id> lock.
+	podUID    types.UID
+	lastPod   *corev1.ObjectReference // last workload pod published, target of drain Events
+	linger    clock.Timer
+	lingerGen uint64
 }
 
 func (m *fuseMount) isGone() bool {
@@ -57,8 +67,10 @@ func (m *fuseMount) watch(events <-chan handoff.Event) {
 				fdConn = e.Conn
 			case handoff.EventReady:
 				m.readyOnce.Do(func() { close(m.ready) })
-			case handoff.EventDrained, handoff.EventDrainTimeout:
+			case handoff.EventDrained:
 				m.drainOnce.Do(func() { close(m.drained) })
+			case handoff.EventDrainTimeout:
+				m.drainOnce.Do(func() { m.drainTimedOut = true; close(m.drained) })
 			case handoff.EventClosed:
 				if e.Conn == fdConn {
 					m.goneOnce.Do(func() { close(m.gone) })
