@@ -16,6 +16,8 @@ run = [
   "go vet ./...",
   "golangci-lint run",
   "go test ./...",
+  "helm lint --strict charts/csi-driver-rclone",
+  "helm template t charts/csi-driver-rclone > /dev/null",
 ]
 
 [tasks."test:fuse"]
