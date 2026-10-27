@@ -19,3 +19,5 @@
 **Mount Option**: An rclone setting, such as VFS cache mode or dir-cache-time, applied to a mount. Only allowlisted options are accepted.
 
 **Unrestricted Options**: An admin-only opt-in that accepts any rclone option, not only allowlisted ones.
+
+**Handoff**: The node plugin passing the FUSE fd it mounted to a Mount Pod over a unix socket. The socket connection stays open afterwards as the Mount Pod's liveness signal.
