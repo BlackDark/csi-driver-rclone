@@ -9,11 +9,13 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/mount-utils"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/handoff"
 	"github.com/BlackDark/csi-driver-rclone/internal/mountpod"
+	"github.com/BlackDark/csi-driver-rclone/internal/mountspec"
 )
 
 // nodeMount is what the node shows for one mount <id> after a plugin restart.
@@ -107,20 +109,23 @@ func (s *Server) serving(id string) bool {
 	return err == nil
 }
 
-// adoptMount owns unlock. Without the publish request the Mount Spec is unknown, so a
-// later loss of this Mount Pod is recreated by the next publish, not at once.
+// adoptMount owns unlock. The Mount Spec comes back from the owned Secret and the
+// workload pod refs from the users annotation, so a later loss of this Mount Pod is
+// recreated at once and reported to its pods.
 func (s *Server) adoptMount(ctx context.Context, n nodeMount, unlock func()) {
 	m := s.newFuseMount(n.id)
 	close(m.ready)
 	m.podUID = n.pod.UID
 	m.volumeID = n.pod.Annotations[mountpod.AnnotationVolID]
+	m.spec = s.loadSpec(ctx, n.id)
+	m.lastPod = s.restoreRefs(n.pod, n.targets)
 	s.serve(m, handoff.ModeAdopt)
 	s.setMount(n.id, m)
 	for _, t := range n.targets {
 		s.deps.Users.Add(n.id, t)
 	}
 	go s.monitor(m)
-	s.deps.Log.Info("adopted mount", "id", n.id, "pod", m.name, "targets", len(n.targets))
+	s.deps.Log.Info("adopted mount", "id", n.id, "pod", m.name, "targets", len(n.targets), "spec", m.spec != nil)
 	if len(n.targets) > 0 {
 		unlock()
 		return
@@ -152,6 +157,31 @@ func (s *Server) cleanupMount(ctx context.Context, n nodeMount) {
 	}
 	_ = os.Remove(mountpod.FuseDir(kd, n.id))
 	_ = os.Remove(mountpod.MountDir(kd, n.id))
-	s.markDead(n.targets, fmt.Sprintf("Mount Pod %s was lost while the node plugin restarted; "+
-		"restart the pod to remount the volume", name))
+	msg := fmt.Sprintf("Mount Pod %s was lost while the node plugin restarted; "+
+		"restart the pod to remount the volume", name)
+	if n.pod != nil {
+		s.restoreRefs(n.pod, n.targets)
+	}
+	now := metav1.NewTime(s.deps.Clock.Now())
+	var events []corev1.Event
+	for _, r := range s.markDead(n.targets, msg) {
+		events = append(events, warningEvent(r, ReasonMountLost, msg, s.cfg.NodeID, now))
+	}
+	s.emit(events)
+}
+
+// loadSpec reads the Mount Spec back from the owned Secret; nil when it is missing or
+// unreadable, so recovery falls back to the next publish.
+func (s *Server) loadSpec(ctx context.Context, id string) *mountspec.Spec {
+	sec, err := s.deps.Kube.GetSecret(ctx, mountpod.Name(id))
+	if err != nil || sec == nil {
+		s.deps.Log.Warn("adopted mount without its Secret; a crash is recovered by the next publish", "id", id, "err", err)
+		return nil
+	}
+	spec, err := mountspec.Load(sec.Data[mountpod.SpecKey], string(sec.Data[mountpod.PasswordKey]))
+	if err != nil {
+		s.deps.Log.Warn("adopted mount with an unreadable spec; a crash is recovered by the next publish", "id", id, "err", err)
+		return nil
+	}
+	return &spec
 }

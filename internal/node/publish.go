@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/mount-utils"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/mountpod"
@@ -23,12 +25,14 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if err != nil {
 		return nil, err
 	}
+	// Inline Volumes get no Event of their own on rejection: kubelet's FailedMount Event
+	// on the workload pod already carries the InvalidArgument message.
 	spec, err := mountspec.Resolve(mountspec.Input{
 		Secrets:       req.GetSecrets(),
 		VolumeContext: req.GetVolumeContext(),
 		VolumeID:      req.GetVolumeId(),
 		ReadOnly:      readOnly,
-		Mode:          mountspec.Persistent,
+		Mode:          lifecycleMode(req.GetVolumeContext()),
 	})
 	if err != nil {
 		return nil, specError(err)
@@ -42,9 +46,10 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "target %s: %v", target, err)
 	}
+	ref := workloadPod(req.GetVolumeContext())
 	if m := s.getMount(id); m != nil && mounted {
 		s.cancelLinger(m)
-		s.addUser(m, target, workloadPod(req.GetVolumeContext()))
+		s.addUser(ctx, m, target, ref)
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 	m, err := s.ensureMount(ctx, id, req.GetVolumeId(), spec)
@@ -58,8 +63,18 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if err := s.deps.Mounter.Mount(m.fuseDir, target, "", opts); err != nil {
 		return nil, status.Errorf(codes.Internal, "bind mount %s: %v", target, err)
 	}
-	s.addUser(m, target, workloadPod(req.GetVolumeContext()))
+	s.addUser(ctx, m, target, ref)
+	if spec.Unrestricted && ref != nil {
+		s.emit([]corev1.Event{s.unrestrictedEvent(*ref, req.GetVolumeId())})
+	}
 	return &csi.NodePublishVolumeResponse{}, nil
+}
+
+func lifecycleMode(vc map[string]string) mountspec.Mode {
+	if vc[ephemeralKey] == "true" {
+		return mountspec.Ephemeral
+	}
+	return mountspec.Persistent
 }
 
 func validatePublish(req *csi.NodePublishVolumeRequest) (readOnly bool, err error) {
@@ -72,8 +87,6 @@ func validatePublish(req *csi.NodePublishVolumeRequest) (readOnly bool, err erro
 		return false, status.Error(codes.InvalidArgument, "volume capability missing")
 	case req.GetVolumeCapability().GetMount() == nil:
 		return false, status.Error(codes.InvalidArgument, "only mount access type is supported")
-	case req.GetVolumeContext()[ephemeralKey] == "true":
-		return false, status.Error(codes.InvalidArgument, "inline volumes are not supported yet")
 	}
 	mode := req.GetVolumeCapability().GetAccessMode().GetMode()
 	readerOnly := mode == csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY ||
@@ -115,6 +128,11 @@ func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec moun
 		// Mount Pod died and recovery has not replaced it yet.
 		s.abort(m)
 	}
+	unlockVol := sync.OnceFunc(s.locks.lock(volumeLockKey(volumeID)))
+	defer unlockVol()
+	if err := s.checkExclusive(ctx, id, volumeID); err != nil {
+		return nil, err
+	}
 	pod, secret, err := mountpod.Build(mountpod.Input{Config: s.cfg.Pod, NodeName: s.cfg.NodeID, VolumeID: volumeID, Spec: spec})
 	if err != nil {
 		return nil, specError(err)
@@ -130,6 +148,7 @@ func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec moun
 		return nil, status.Errorf(codes.Internal, "fuse mount: %v", err)
 	}
 	s.setMount(id, m)
+	unlockVol() // m is visible now; checkExclusive of another <id> sees it
 	created, err := s.deps.Kube.CreatePod(ctx, &pod)
 	if err == nil && created.DeletionTimestamp != nil {
 		err = fmt.Errorf("mount pod %s is still terminating", pod.Name)

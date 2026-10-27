@@ -21,14 +21,21 @@ import (
 const ReasonMountLost = "MountLost"
 
 // addUser records target as a user of m. Callers hold the <id> lock.
-func (s *Server) addUser(m *fuseMount, target string, ref *corev1.ObjectReference) {
-	m.lastPod = ref
+func (s *Server) addUser(ctx context.Context, m *fuseMount, target string, ref *corev1.ObjectReference) {
+	if ref != nil {
+		m.lastPod = ref
+	}
 	s.deps.Users.Add(m.id, target)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.dead, target)
-	if ref != nil {
+	changed := false
+	if ref != nil && !sameRef(s.refs[target], ref) {
 		s.refs[target] = ref
+		changed = true
+	}
+	s.mu.Unlock()
+	if changed {
+		s.syncUsers(ctx, m)
 	}
 }
 
@@ -124,10 +131,13 @@ func (s *Server) recoverMount(m *fuseMount, reason string) {
 		s.deps.Log.Warn("lost mount pod not gone; next publish recreates it", "id", m.id, "err", err)
 		return
 	}
-	if _, err := s.ensureMount(ctx, m.id, m.volumeID, *m.spec); err != nil {
+	nm, err := s.ensureMount(ctx, m.id, m.volumeID, *m.spec)
+	if err != nil {
 		s.deps.Log.Warn("recreate mount pod; next publish retries", "id", m.id, "err", err)
 		return
 	}
+	nm.lastPod = m.lastPod
+	s.syncUsers(ctx, nm)
 	s.deps.Log.Info("mount pod recreated", "id", m.id, "deadTargets", len(targets))
 }
 

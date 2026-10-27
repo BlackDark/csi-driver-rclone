@@ -2,12 +2,14 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/fusemount"
@@ -30,6 +32,10 @@ type Kube interface {
 	ListPods(ctx context.Context, selector string) ([]corev1.Pod, error)
 	// GetPod returns nil, nil when the pod does not exist.
 	GetPod(ctx context.Context, name string) (*corev1.Pod, error)
+	// AnnotatePod sets one annotation on a pod; an empty value removes it.
+	AnnotatePod(ctx context.Context, name, key, value string) error
+	// GetSecret returns nil, nil when the secret does not exist.
+	GetSecret(ctx context.Context, name string) (*corev1.Secret, error)
 }
 
 // FuseMounter performs the kernel FUSE mount (package fusemount).
@@ -140,4 +146,30 @@ func (k *clientKube) GetPod(ctx context.Context, name string) (*corev1.Pod, erro
 		return nil, fmt.Errorf("get pod %s: %w", name, err)
 	}
 	return p, nil
+}
+
+func (k *clientKube) AnnotatePod(ctx context.Context, name, key, value string) error {
+	var v any = value
+	if value == "" {
+		v = nil // merge patch null deletes the key
+	}
+	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{key: v}}})
+	if err != nil {
+		return fmt.Errorf("annotate pod %s: %w", name, err)
+	}
+	if _, err := k.cs.CoreV1().Pods(k.ns).Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("annotate pod %s: %w", name, err)
+	}
+	return nil
+}
+
+func (k *clientKube) GetSecret(ctx context.Context, name string) (*corev1.Secret, error) {
+	sec, err := k.cs.CoreV1().Secrets(k.ns).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get secret %s: %w", name, err)
+	}
+	return sec, nil
 }

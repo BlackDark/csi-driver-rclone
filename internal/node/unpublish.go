@@ -2,12 +2,16 @@ package node
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/mount-utils"
+
+	"github.com/BlackDark/csi-driver-rclone/internal/mountpod"
+	"github.com/BlackDark/csi-driver-rclone/internal/mountspec"
 )
 
 const kubeCallTimeout = 30 * time.Second
@@ -28,7 +32,11 @@ func (s *Server) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	}
 	unlock := s.locks.lock(id)
 	m := s.getMount(id)
-	if s.deps.Users.Remove(target) > 0 || m == nil {
+	remaining := s.deps.Users.Remove(target)
+	if m != nil {
+		s.syncUsers(ctx, m)
+	}
+	if remaining > 0 || m == nil {
 		unlock()
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
@@ -51,14 +59,17 @@ func (s *Server) release(ctx context.Context, m *fuseMount, unlock func()) error
 	go func() {
 		defer s.bg.Done()
 		defer unlock()
-		s.finishTeardown(m)
+		if !s.finishTeardown(m) {
+			s.removeEphemeralCache(m)
+		}
 	}()
 	return nil
 }
 
 // finishTeardown waits for the Mount Pod's drain result (or its exit), then unmounts
-// fuse/, which lets rclone exit. The Secret is GC'd with the Pod; deleting it is a fallback.
-func (s *Server) finishTeardown(m *fuseMount) {
+// fuse/, which lets rclone exit. The Secret is GC'd with the Pod; deleting it is a
+// fallback. It reports whether the drain timed out.
+func (s *Server) finishTeardown(m *fuseMount) bool {
 	t := time.NewTimer(s.teardownTimeout())
 	defer t.Stop()
 	timedOut := false
@@ -80,5 +91,19 @@ func (s *Server) finishTeardown(m *fuseMount) {
 	defer cancel()
 	if err := s.deps.Kube.DeleteSecret(ctx, m.name); err != nil {
 		s.deps.Log.Warn("delete mount secret", "id", m.id, "err", err)
+	}
+	return timedOut
+}
+
+// removeEphemeralCache deletes the hostPath Cache of a released Inline Volume: its
+// volume id is per pod and never comes back. A timed-out drain keeps it, since
+// pending writes are still in there.
+func (s *Server) removeEphemeralCache(m *fuseMount) {
+	if m.spec == nil || m.spec.Mode != mountspec.Ephemeral || m.spec.CacheVolume != "" || m.volumeID == "" {
+		return
+	}
+	dir := mountpod.CacheDir(s.cfg.Pod.CacheRoot, m.volumeID)
+	if err := os.RemoveAll(dir); err != nil {
+		s.deps.Log.Warn("remove inline volume cache", "id", m.id, "dir", dir, "err", err)
 	}
 }
