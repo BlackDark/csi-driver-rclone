@@ -12,3 +12,13 @@
 - [ ] The Mount Pod manifest builder is a pure function with tests: ownerReference, no credentials in args or env literals
 - [ ] RBAC: pods and Secrets in the driver namespace only
 - [ ] kind + MinIO e2e: write, read, delete the pod, and the Mount Pod and owned Secret are gone
+
+## Progress
+
+Part A (no Kubernetes API, no CSI yet) is done:
+- `internal/handoff`: socket protocol, fd passing, adopt after plugin restart ([contract](../design/mount-pod-contract.md#handoff-protocol)).
+- `internal/fusemount`: `/dev/fuse` + mount(2) per ADR 0002, Linux only.
+- `internal/rclonemount` + `mount` mode: spec.json, in-memory rclone config, mount2 on `/dev/fd/N`, drain on SIGTERM. rclone v1.75.2.
+- `mise run test:fuse`: Docker test; uid 1000 serves the mount, root writes through it, the drain reaches the remote, then the external unmount.
+
+Left: Mount Pod manifest builder, owned Secret, node plugin CSI, chart, image, e2e.

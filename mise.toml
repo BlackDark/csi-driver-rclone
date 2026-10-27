@@ -14,3 +14,12 @@ run = [
   "golangci-lint run",
   "go test ./...",
 ]
+
+[tasks."test:fuse"]
+description = "FUSE handoff + mount2 integration test in a privileged-enough Linux container"
+run = '''
+docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+  -v "$PWD":/src -w /src -v csi-driver-rclone-gomod:/go/pkg/mod -v csi-driver-rclone-gocache:/root/.cache/go-build \
+  golang:{{ tools.go.version }} \
+  go test -tags fuse_integration -run TestFuse -count=1 -v ./internal/rclonemount/
+'''
