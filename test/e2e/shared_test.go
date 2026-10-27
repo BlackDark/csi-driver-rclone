@@ -73,7 +73,8 @@ func TestWriteBackDrainedOnStop(t *testing.T) {
 		"remote": "minio", "remotePath": "e2e-bucket/wb", "vfs-cache-mode": "writes", "vfs-write-back": "60s",
 	}))
 	marker := fmt.Sprintf("wb-%d", time.Now().UnixNano())
-	pod := workload("e2e-writeback", "e2e-writeback", fmt.Sprintf("echo %s > /data/wb.txt && echo WROTE && sleep 3600", marker))
+	file := marker + ".txt" // unique per run: earlier runs leave their objects behind
+	pod := workload("e2e-writeback", "e2e-writeback", fmt.Sprintf("echo %s > /data/%s && echo WROTE && sleep 3600", marker, file))
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "WROTE")
 	deletePod(ctx, t, cs, pod.Name)
@@ -82,7 +83,7 @@ func TestWriteBackDrainedOnStop(t *testing.T) {
 		return soleMountPod(ctx, t, cs).DeletionTimestamp != nil, nil
 	})
 	out, _ := runMC(ctx, cs, "ls", "e2e/e2e-bucket/wb/")
-	if strings.Contains(out, "wb.txt") {
+	if strings.Contains(out, file) {
 		t.Fatalf("object uploaded before the Mount Pod stopped; the test proves nothing: %s", out)
 	}
 	t.Log("upload still queued when the Mount Pod got SIGTERM")
@@ -90,7 +91,7 @@ func TestWriteBackDrainedOnStop(t *testing.T) {
 	poll(ctx, t, "Mount Pod gone", func() (bool, error) {
 		return countMount(ctx, t, cs) == 0, nil
 	})
-	out, err := runMC(ctx, cs, "cat", "e2e/e2e-bucket/wb/wb.txt")
+	out, err := runMC(ctx, cs, "cat", "e2e/e2e-bucket/wb/"+file)
 	if err != nil || !strings.Contains(out, marker) {
 		t.Fatalf("drained object not in MinIO: %q %v", out, err)
 	}
