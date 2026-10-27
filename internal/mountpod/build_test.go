@@ -152,6 +152,9 @@ func TestVolumes(t *testing.T) {
 	if h := volume(pod, volRun).HostPath; h == nil || h.Path != MountDir(in.Config.KubeletDir, id) {
 		t.Errorf("run volume: %+v", h)
 	}
+	if pod.Labels[LabelVolume] != CacheKey("vol-1") {
+		t.Errorf("volume label: %v", pod.Labels)
+	}
 	h := volume(pod, volCache).HostPath
 	if h == nil || h.Path != "/var/lib/rclone-csi/cache/"+CacheKey("vol-1") || *h.Type != corev1.HostPathDirectoryOrCreate {
 		t.Errorf("cache volume: %+v", h)

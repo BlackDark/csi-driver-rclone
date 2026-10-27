@@ -17,6 +17,11 @@ const (
 	LabelNode       = driver.Name + "/node"
 	LabelID         = driver.Name + "/id"
 	AnnotationVolID = driver.Name + "/volume-id"
+	// LabelVolume is CacheKey(volume ID): it finds every Mount Pod of a volume on a node.
+	LabelVolume = driver.Name + "/volume"
+	// AnnotationUsers maps each target path to its workload pod, so a restarted node
+	// plugin can still send Events to them.
+	AnnotationUsers = driver.Name + "/users"
 
 	AppName   = "csi-driver-rclone"
 	Component = "mount"
@@ -42,7 +47,9 @@ func ID(identity, nodeName string) string {
 // Name is the Mount Pod and owned Secret name for id.
 func Name(id string) string { return "rclone-mount-" + id }
 
-// CacheKey names the hostPath Cache dir of a volume; it outlives spec changes.
+// CacheKey names the hostPath Cache dir of a volume; it outlives spec changes, so at
+// most one <id> of a volume may run on a node at a time. The dir is node-local, so
+// the key is per (volume, node).
 func CacheKey(volumeID string) string { return shortHash(volumeID) }
 
 // MountDir is the per-mount host dir holding fuse/ and handoff.sock.

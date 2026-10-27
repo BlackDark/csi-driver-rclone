@@ -42,10 +42,12 @@ const graceSlack = 10 * time.Second
 // Pod's UID, so callers create the Pod first and then apply OwnedBy.
 func Build(in Input) (corev1.Pod, corev1.Secret, error) {
 	id := ID(in.Spec.Identity, in.NodeName)
+	labels := Labels(in.NodeName, id)
+	labels[LabelVolume] = CacheKey(in.VolumeID)
 	meta := metav1.ObjectMeta{
 		Name:        Name(id),
 		Namespace:   in.Config.Namespace,
-		Labels:      Labels(in.NodeName, id),
+		Labels:      labels,
 		Annotations: map[string]string{AnnotationVolID: in.VolumeID},
 	}
 	secret, err := buildSecret(meta, in.Spec)
