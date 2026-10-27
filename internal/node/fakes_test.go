@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -39,6 +40,9 @@ func (f *fakeFuse) Mount(target string, o fusemount.Opts) (int, error) {
 func (f *fakeFuse) Unmount(target string, _ bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if _, ok := f.mounted[target]; !ok {
+		return syscall.EINVAL
+	}
 	delete(f.mounted, target)
 	f.unmounted = append(f.unmounted, target)
 	return nil

@@ -120,3 +120,13 @@ func TestDrainTimeoutEmitsEvents(t *testing.T) {
 		t.Error("fuse not unmounted after drain timeout")
 	}
 }
+
+func TestPublishAfterPluginRestartReplacesStaleFuseMount(t *testing.T) {
+	h := newHarness(t)
+	h.publish(t, filepath.Join(h.dir, "a"))
+	h.srv = New(h.srv.cfg, h.srv.deps) // restart: in-memory mounts lost, fuse/ still mounted
+	h.publish(t, filepath.Join(h.dir, "b"))
+	if h.fuse.count() != 1 || len(h.fuse.unmounted) != 1 {
+		t.Fatalf("fuse=%d unmounted=%v", h.fuse.count(), h.fuse.unmounted)
+	}
+}

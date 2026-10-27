@@ -105,6 +105,11 @@ func (s *Server) startMount(id string, spec mountspec.Spec) (*fuseMount, error) 
 	if err := s.deps.PrepareDir(m.mountDir, uid, gid); err != nil {
 		return nil, fmt.Errorf("prepare mount dir: %w", err)
 	}
+	// No live mount for id is known, so a mount on fuse/ is a dead leftover of a
+	// plugin restart; it would fail mkdir with EEXIST. Adoption (ticket 06) replaces this.
+	if err := s.deps.Fuse.Unmount(m.fuseDir, true); err == nil {
+		s.deps.Log.Warn("unmounted stale fuse mount", "id", id)
+	}
 	if err := os.MkdirAll(m.fuseDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create fuse dir: %w", err)
 	}

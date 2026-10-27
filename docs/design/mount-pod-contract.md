@@ -47,5 +47,6 @@ After the handshake the client sends `ready`, `drained` or `drain-timeout`; the 
 ## Restart and failure
 
 - Node plugin restart: running mounts are kept. On start, the plugin lists its Mount Pods on this node and the mounts under `mounts/*/fuse`. Each Mount Pod reconnects to the new plugin's `handoff.sock` and sends `adopt`, which carries no new fd. Users are rebuilt from the mount table: binds of `mounts/<id>/fuse` under the kubelet pods dir.
+- Until adoption lands, a publish that finds no live mount for `<id>` lazily unmounts any leftover mount on `fuse/` before mounting afresh.
 - Mount Pod death, which shows as connection EOF without `drained`: `fuse/` returns `ENOTCONN`. The plugin reports `VOLUME_CONDITION` abnormal, emits an Event, unmounts `fuse/`, and deletes and recreates the Pod with a new fd. Bind mounts in workload pods stay dead until they are republished: see ticket 06.
 - The Mount Pod name stays the same as long as the spec has not changed. A changed spec gets a new `<id>`, and so a new Mount Pod.
