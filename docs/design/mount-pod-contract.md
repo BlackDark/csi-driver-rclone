@@ -11,6 +11,7 @@ How the node plugin and a Mount Pod work together. Background: [ADR 0001](../adr
   - `fuse/`: the FUSE mountpoint. Only the node plugin mounts it, and only the node plugin sees it (Bidirectional).
   - `handoff.sock`: a unix socket served by the node plugin.
 - The Mount Pod mounts the per-mount directory, without `fuse/`, through hostPath `<...>/mounts/<id>`, using `mountPropagation: None`.
+- The node plugin's CSI socket is `<kubeletDir>/plugins/rclone.csi.blackdark.github.io/csi.sock`. The plugin mounts that dir and `<kubeletDir>/pods` at their host paths with Bidirectional propagation. It bind-mounts with mount(2) and umount(2) directly, not mount(8), so the image stays distroless.
 - Cache: hostPath `<cacheRoot>/<volume hash>` (first 16 hex of sha256 of the volume ID, type `DirectoryOrCreate`), or `cacheVolume` decoded strictly as a `VolumeSource`. It is mounted at `/cache`. The node plugin creates the hostPath dir and the per-mount directory owned by the Mount Pod uid/gid, mode `0750`, so it needs `cacheRoot` mounted too.
 - Pod: `restartPolicy: Never` (a restarted container would need a new fd, so the plugin recreates the pod), `automountServiceAccountToken: false`, `enableServiceLinks: false`, `fsGroup` = Mount Pod gid (Secret files are `0440`), an `emptyDir` at `/tmp` beside the read-only root filesystem, `terminationGracePeriodSeconds` = drain timeout + unmount wait + 10s.
 - The Secret is mounted at `/etc/rclone-mount/`. It holds `spec.json` (serialized Mount Spec, without the password) and `config-password` (optional).

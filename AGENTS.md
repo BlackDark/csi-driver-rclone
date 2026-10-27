@@ -19,6 +19,7 @@ Deviations:
 ## Map
 
 - `cmd/csi-driver-rclone`: the one binary; modes `node`, `controller`, `mount`.
+- `charts/csi-driver-rclone`: the Helm chart. `hack/e2e` + `test/e2e`: kind + MinIO e2e (`mise run e2e`).
 - Domain terms: `GLOSSARY.md`. Volume keys: `docs/reference/volume-parameters.md`. Decisions: `docs/adr/`. Scope: `docs/scope.md`. Spec: `docs/spec/`. Work items: `docs/tickets/`.
 - `refs/`: gitignored reference checkouts; read only, never edit or import.
 

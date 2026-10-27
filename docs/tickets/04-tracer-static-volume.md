@@ -4,14 +4,14 @@
 
 **Blocked by:** 01, 02, 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Distroless non-root image with the single binary; node plugin privileged without hostNetwork; controller absent or idle
-- [ ] CSIDriver object as specified in the spec (no attacher)
+- [x] Distroless non-root image with the single binary; node plugin privileged without hostNetwork; controller absent or idle
+- [x] CSIDriver object as specified in the spec (no attacher)
 - [x] Mount Pod securityContext follows ADR 0002
 - [x] The Mount Pod manifest builder is a pure function with tests: ownerReference, no credentials in args or env literals
-- [ ] RBAC: pods and Secrets in the driver namespace only
-- [ ] kind + MinIO e2e: write, read, delete the pod, and the Mount Pod and owned Secret are gone
+- [x] RBAC: pods and Secrets in the driver namespace only
+- [x] kind + MinIO e2e: write, read, delete the pod, and the Mount Pod and owned Secret are gone
 
 ## Progress
 
@@ -26,4 +26,8 @@ Part B (node plugin, unit tests with fakes) is done:
 - `internal/node`: Node service; publish ensures FUSE mount, handoff, Pod, owned Secret, waits for `ready`, binds (read-only per publish); unpublish of the last user deletes the Pod, then unmounts `fuse/` after the drain. Linger and restart adoption are seams only.
 - `internal/identity`, `internal/csiserver` (unix socket, protosanitizer logging), `node` mode flags.
 
-Left (part C): image, chart (CSIDriver, DaemonSet, RBAC), kind + MinIO e2e.
+Part C is done:
+- `Dockerfile`: distroless `static-debian12:nonroot`, one binary. The node plugin binds with mount(2)/umount(2) (`node.BindMounter`), so the image needs no util-linux.
+- `charts/csi-driver-rclone`: CSIDriver, node DaemonSet (privileged root, no hostNetwork, registrar + livenessprobe), ServiceAccount, Role on pods/secrets/events in the release namespace. No controller (ticket 07).
+- `mise run e2e`: kind + MinIO (`hack/e2e`, `test/e2e`, tag `e2e`). Write, read, object in MinIO, delete the pod, Mount Pod and owned Secret gone; credentials in `volumeAttributes` give a `FailedMount` event with `InvalidArgument`. MinIO images come from `cgr.dev/chainguard` because the upstream images are no longer pullable.
+- Gaps: no Events from the plugin yet (the Role already allows them), e2e not in CI.
