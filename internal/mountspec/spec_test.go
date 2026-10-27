@@ -182,3 +182,27 @@ func TestResourcesAndCache(t *testing.T) {
 		t.Errorf("got %+v %q", s.Resources, s.CacheVolume)
 	}
 }
+
+func TestValidateContext(t *testing.T) {
+	ok := map[string]string{"remote": "m", "remotePath": "b/x", "vfs-cache-mode": "writes", "csi.storage.k8s.io/pvc/name": "p"}
+	if err := ValidateContext(ok, Persistent); err != nil {
+		t.Fatal(err)
+	}
+	bad := []struct {
+		vc   map[string]string
+		mode Mode
+	}{
+		{map[string]string{"configData": "x"}, Persistent},
+		{map[string]string{"access_key_id": "x"}, Persistent},
+		{map[string]string{"bogus-flag": "1"}, Persistent},
+		{map[string]string{"vfs-cache-mode": "nope"}, Persistent},
+		{map[string]string{"cacheVolume": "["}, Persistent},
+		{map[string]string{"allowAllOptions": "true"}, Ephemeral},
+		{map[string]string{"mountPod.cpuLimit": "1"}, Ephemeral},
+	}
+	for _, c := range bad {
+		if err := ValidateContext(c.vc, c.mode); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%v: got %v", c.vc, err)
+		}
+	}
+}

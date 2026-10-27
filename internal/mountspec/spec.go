@@ -217,3 +217,26 @@ func identity(volumeID string, s Spec) string {
 	sum := sha256.Sum256(canon)
 	return hex.EncodeToString(sum[:])
 }
+
+// ValidateContext checks the volume context alone, for callers without the secret
+// (the controller validating StorageClass parameters). Resolve still runs every check.
+func ValidateContext(vc map[string]string, mode Mode) error {
+	ctx, opts, err := splitContext(vc)
+	if err != nil {
+		return err
+	}
+	unrestricted, err := parseUnrestricted(ctx[KeyAllowAllOptions], mode)
+	if err != nil {
+		return err
+	}
+	if mode == Ephemeral {
+		if err := rejectAdminKeys(ctx); err != nil {
+			return err
+		}
+	}
+	if _, err := resolveOptions(opts, mode, unrestricted); err != nil {
+		return err
+	}
+	_, err = validateCacheVolume(ctx[KeyCacheVolume])
+	return err
+}
