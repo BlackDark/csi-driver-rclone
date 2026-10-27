@@ -11,8 +11,6 @@ import (
 
 var modes = []string{"node", "controller", "mount"}
 
-var errNotImplemented = errors.New("not implemented")
-
 func main() {
 	os.Exit(run(os.Args[1:], os.Stderr))
 }
@@ -61,13 +59,9 @@ func dispatch(mode string, args []string, stderr io.Writer) error {
 		return runMount(args, stderr)
 	case "node":
 		return runNode(args, stderr)
+	default:
+		return runController(args, stderr)
 	}
-	fs := flag.NewFlagSet(mode, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	return fmt.Errorf("%s: %w", mode, errNotImplemented)
 }
 
 func usage(w io.Writer) {

@@ -9,8 +9,8 @@ import (
 )
 
 func TestDispatch(t *testing.T) {
-	if err := dispatch("controller", nil, io.Discard); !errors.Is(err, errNotImplemented) {
-		t.Errorf("controller: got %v, want not implemented", err)
+	if err := dispatch("controller", []string{"extra"}, io.Discard); err == nil {
+		t.Error("controller with extra args accepted")
 	}
 	if err := dispatch("bogus", nil, io.Discard); !errors.Is(err, errUnknownMode) {
 		t.Errorf("bogus: got %v, want unknown mode", err)
@@ -26,12 +26,13 @@ func TestRunExitCodes(t *testing.T) {
 		args []string
 		want int
 	}{
-		"help":       {[]string{"--help"}, 0},
-		"mode help":  {[]string{"node", "--help"}, 0},
-		"mount help": {[]string{"mount", "--help"}, 0},
-		"no mode":    {nil, 2},
-		"unknown":    {[]string{"bogus"}, 2},
-		"controller": {[]string{"controller"}, 1},
+		"help":            {[]string{"--help"}, 0},
+		"mode help":       {[]string{"node", "--help"}, 0},
+		"mount help":      {[]string{"mount", "--help"}, 0},
+		"no mode":         {nil, 2},
+		"unknown":         {[]string{"bogus"}, 2},
+		"controller help": {[]string{"controller", "--help"}, 0},
+		"controller args": {[]string{"controller", "x"}, 1},
 	}
 	for name, c := range cases {
 		if got := run(c.args, io.Discard); got != c.want {
