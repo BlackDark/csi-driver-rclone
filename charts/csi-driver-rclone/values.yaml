@@ -85,8 +85,15 @@ mountPod:
   drainTimeout: 5m
   # Mount Pod wait for the node plugin's unmount after draining.
   unmountWait: 30s
-  tolerations:
-    - operator: Exists
+  # Mount Pod tolerations; null or [] (default null) uses node.tolerations.
+  tolerations: null
+  # Default Mount Pod resources. Volume context keys mountPod.cpuRequest,
+  # cpuLimit, memoryRequest and memoryLimit override them per field. No memory
+  # limit by default: an OOM kill drops pending uploads. Sizing: docs/operations.md.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
 
 # Prometheus metrics (docs/reference/metrics.md). The endpoints are unauthenticated
 # plain HTTP inside the cluster; restrict them with a NetworkPolicy if needed.

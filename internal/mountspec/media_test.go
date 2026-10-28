@@ -60,7 +60,6 @@ password = obscured
 		Remote:         Remote{ConfigData: wantConfig, FsPath: media + ":"},
 		ConfigPassword: "pw",
 		Options:        wantOptions,
-		Resources:      Resources{MemoryRequest: DefaultMemoryRequest},
 		Identity:       got.Identity,
 	}
 	if !reflect.DeepEqual(got, want) {

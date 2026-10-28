@@ -55,7 +55,8 @@ spec:
             - --mount-uid={{ .Values.mountPod.uid }}
             - --mount-gid={{ .Values.mountPod.gid }}
             - --mount-priority-class={{ .Values.mountPod.priorityClassName }}
-            - --mount-tolerations={{ .Values.mountPod.tolerations | toJson }}
+            - --mount-tolerations={{ .Values.mountPod.tolerations | default .Values.node.tolerations | toJson }}
+            - --mount-resources={{ .Values.mountPod.resources | toJson }}
             - --publish-timeout={{ .Values.node.publishTimeout }}
             - --linger={{ .Values.mountPod.linger }}
             - --drain-timeout={{ .Values.mountPod.drainTimeout }}

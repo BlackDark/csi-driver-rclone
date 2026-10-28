@@ -36,9 +36,6 @@ const (
 	KeyRemoteType     = "remoteType"
 )
 
-// DefaultMemoryRequest applies when no memory request is set (docs/scope.md).
-const DefaultMemoryRequest = "64Mi"
-
 const shorthandRemoteName = "remote"
 
 // Input is everything Resolve needs from a CSI request.
@@ -180,16 +177,12 @@ func rejectAdminKeys(ctx map[string]string) error {
 }
 
 func resolveResources(ctx map[string]string) Resources {
-	r := Resources{
+	return Resources{
 		CPURequest:    ctx[KeyCPURequest],
 		CPULimit:      ctx[KeyCPULimit],
 		MemoryRequest: ctx[KeyMemoryRequest],
 		MemoryLimit:   ctx[KeyMemoryLimit],
 	}
-	if r.MemoryRequest == "" {
-		r.MemoryRequest = DefaultMemoryRequest
-	}
-	return r
 }
 
 func validateCacheVolume(raw string) (string, error) {

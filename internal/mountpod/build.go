@@ -23,8 +23,11 @@ type Config struct {
 	UID, GID          int64
 	PriorityClassName string
 	Tolerations       []corev1.Toleration
-	DrainTimeout      time.Duration
-	UnmountWait       time.Duration
+	// Resources are node-wide defaults; volume context keys override them per field.
+	// Outside the Mount Spec, so changing them never replaces a Mount Pod.
+	Resources    corev1.ResourceRequirements
+	DrainTimeout time.Duration
+	UnmountWait  time.Duration
 }
 
 // Input is one Mount Pod to build.
@@ -54,7 +57,7 @@ func Build(in Input) (corev1.Pod, corev1.Secret, error) {
 	if err != nil {
 		return corev1.Pod{}, corev1.Secret{}, err
 	}
-	resources, err := buildResources(in.Spec.Resources)
+	resources, err := buildResources(in.Config.Resources, in.Spec.Resources)
 	if err != nil {
 		return corev1.Pod{}, corev1.Secret{}, err
 	}
@@ -99,8 +102,8 @@ func buildSecret(meta metav1.ObjectMeta, spec mountspec.Spec) (corev1.Secret, er
 	}, nil
 }
 
-func buildResources(r mountspec.Resources) (corev1.ResourceRequirements, error) {
-	var out corev1.ResourceRequirements
+func buildResources(defaults corev1.ResourceRequirements, r mountspec.Resources) (corev1.ResourceRequirements, error) {
+	out := *defaults.DeepCopy()
 	set := func(list *corev1.ResourceList, name corev1.ResourceName, key, v string) error {
 		if v == "" {
 			return nil

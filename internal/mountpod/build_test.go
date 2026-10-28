@@ -7,6 +7,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/mountspec"
@@ -38,6 +39,9 @@ func testInput(t *testing.T, vc map[string]string) Input {
 			UID: 65532, GID: 65532, PriorityClassName: "system-node-critical",
 			Tolerations:  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 			DrainTimeout: 5 * time.Minute, UnmountWait: 30 * time.Second,
+			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("64Mi"),
+			}},
 		},
 		NodeName: "node-a", VolumeID: "vol-1", Spec: spec,
 	}
@@ -184,10 +188,17 @@ func TestCacheVolumeSource(t *testing.T) {
 }
 
 func TestResources(t *testing.T) {
-	pod, _ := build(t, testInput(t, map[string]string{mountspec.KeyCPULimit: "500m"}))
+	in := testInput(t, map[string]string{mountspec.KeyCPULimit: "500m", mountspec.KeyMemoryRequest: "1Gi"})
+	pod, _ := build(t, in)
 	r := pod.Spec.Containers[0].Resources
-	if r.Limits.Cpu().String() != "500m" || r.Requests.Memory().String() != mountspec.DefaultMemoryRequest {
+	if r.Limits.Cpu().String() != "500m" || r.Requests.Memory().String() != "1Gi" || r.Requests.Cpu().String() != "10m" {
 		t.Errorf("resources: %+v", r)
+	}
+	if _, ok := r.Limits[corev1.ResourceMemory]; ok {
+		t.Errorf("memory limit set: %+v", r)
+	}
+	if in.Config.Resources.Requests.Memory().String() != "64Mi" {
+		t.Errorf("defaults mutated: %+v", in.Config.Resources)
 	}
 	_, _, err := Build(testInput(t, map[string]string{mountspec.KeyMemoryLimit: "lots"}))
 	if !errors.Is(err, mountspec.ErrInvalid) {

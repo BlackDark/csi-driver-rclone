@@ -177,7 +177,7 @@ func TestResourcesAndCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Resources{CPURequest: "100m", MemoryRequest: DefaultMemoryRequest, MemoryLimit: "1Gi"}
+	want := Resources{CPURequest: "100m", MemoryLimit: "1Gi"}
 	if s.Resources != want || s.CacheVolume != `{"emptyDir":{}}` {
 		t.Errorf("got %+v %q", s.Resources, s.CacheVolume)
 	}

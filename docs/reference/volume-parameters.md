@@ -21,7 +21,7 @@ Keys read by Mount Spec resolution (`internal/mountspec`). Terms: [GLOSSARY.md](
 | `remotePath` | Path inside the remote, default root. | yes |
 | `allowAllOptions` | `true` enables Unrestricted Options. Each publish emits a Warning Event `UnrestrictedOptions` on the workload pod. | rejected |
 | `cacheVolume` | Cache volume source as a JSON object, e.g. `{"emptyDir":{}}`, decoded strictly as a Kubernetes `VolumeSource`. Default: hostPath `<cacheRoot>/<volume hash>`, which survives Mount Pod replacement. | rejected |
-| `mountPod.cpuRequest`, `mountPod.cpuLimit`, `mountPod.memoryRequest`, `mountPod.memoryLimit` | Mount Pod resources as Kubernetes quantities. `memoryRequest` defaults to `64Mi`. | rejected |
+| `mountPod.cpuRequest`, `mountPod.cpuLimit`, `mountPod.memoryRequest`, `mountPod.memoryLimit` | Mount Pod resources as Kubernetes quantities. Each key overrides chart `mountPod.resources` (default requests `cpu: 10m`, `memory: 64Mi`, no limits); sizing in [operations](../operations.md). | rejected |
 | any other key | A Mount Option: rclone long flag name without dashes, e.g. `vfs-cache-mode`. `vfs_cache_mode` and `--vfs-cache-mode` are accepted. | subset |
 
 Keys containing `/` (Kubernetes-injected, `csi.storage.k8s.io/*`) are ignored.

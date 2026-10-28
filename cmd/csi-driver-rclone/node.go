@@ -35,6 +35,7 @@ type nodeFlags struct {
 	cfg         node.Config
 	uid, gid    int64
 	tolerations string
+	resources   string
 	metricsAddr string
 	logLevel    slog.Level
 }
@@ -54,6 +55,7 @@ func parseNodeFlags(args []string, stderr io.Writer) (nodeFlags, error) {
 	fs.Int64Var(&f.gid, "mount-gid", 65532, "Mount Pod gid")
 	fs.StringVar(&p.PriorityClassName, "mount-priority-class", "system-node-critical", "Mount Pod priorityClassName")
 	fs.StringVar(&f.tolerations, "mount-tolerations", "", "Mount Pod tolerations as a JSON list")
+	fs.StringVar(&f.resources, "mount-resources", `{"requests":{"memory":"64Mi"}}`, "default Mount Pod resources as JSON ResourceRequirements")
 	fs.DurationVar(&f.cfg.PublishTimeout, "publish-timeout", 2*time.Minute, "bound on waiting for a Mount Pod to be ready")
 	fs.DurationVar(&f.cfg.Linger, "linger", 2*time.Minute, "how long an unused Mount Pod stays up; 0 stops it at once")
 	fs.DurationVar(&p.DrainTimeout, "drain-timeout", 5*time.Minute, "Mount Pod upload drain bound on stop")
@@ -83,6 +85,9 @@ func (f *nodeFlags) finish(fs *flag.FlagSet) error {
 			return fmt.Errorf("node: --mount-tolerations: %w", err)
 		}
 		p.Tolerations = t
+	}
+	if err := json.Unmarshal([]byte(f.resources), &p.Resources); err != nil {
+		return fmt.Errorf("node: --mount-resources: %w", err)
 	}
 	return nil
 }
