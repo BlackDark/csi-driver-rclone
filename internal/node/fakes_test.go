@@ -62,6 +62,7 @@ type fakeHandoff struct {
 	modes  []handoff.ServerMode
 	hang   bool
 	events chan<- handoff.Event
+	tokens []handoff.TokenHandler
 }
 
 func (h *fakeHandoff) Serve(ctx context.Context, cfg handoff.ServerConfig, ev chan<- handoff.Event) error {
@@ -69,6 +70,7 @@ func (h *fakeHandoff) Serve(ctx context.Context, cfg handoff.ServerConfig, ev ch
 	h.serves++
 	h.modes = append(h.modes, cfg.Mode)
 	h.events = ev
+	h.tokens = append(h.tokens, cfg.Tokens)
 	hang := h.hang
 	h.mu.Unlock()
 	switch {

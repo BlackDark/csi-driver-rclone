@@ -1,6 +1,8 @@
 package node
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/metrics"
@@ -37,7 +39,12 @@ type Metrics struct {
 	lost      prometheus.Counter
 	adoptions *prometheus.CounterVec
 	heals     *prometheus.CounterVec
+	tokenSave *prometheus.CounterVec
+	tokenWait prometheus.Histogram
 }
+
+// Token write-back results in csi_rclone_token_writebacks_total.
+var tokenResults = []string{"written", "unchanged", "stale", "error"}
 
 // NewMetrics registers the counters on reg; a nil reg leaves them unregistered.
 func NewMetrics(reg prometheus.Registerer) *Metrics {
@@ -55,6 +62,18 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Namespace: metrics.Namespace, Name: "workload_heals_total",
 			Help: "Workload pods handled by healing after a lost Mount Pod, by result.",
 		}, []string{"result"}),
+		tokenSave: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: metrics.Namespace, Name: "token_writebacks_total",
+			Help: "Refreshed OAuth tokens reported by Mount Pods, by result.",
+		}, []string{"result"}),
+		tokenWait: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: metrics.Namespace, Name: "token_lock_wait_seconds",
+			Help:    "Time a Mount Pod waited for the OAuth token refresh Lease.",
+			Buckets: []float64{0.05, 0.25, 1, 5, 15, 45},
+		}),
+	}
+	for _, r := range tokenResults {
+		m.tokenSave.WithLabelValues(r)
 	}
 	for _, r := range healResults {
 		m.heals.WithLabelValues(r)
@@ -66,10 +85,16 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.adoptions.WithLabelValues(r)
 	}
 	if reg != nil {
-		reg.MustRegister(m.drain, m.lost, m.adoptions, m.heals)
+		reg.MustRegister(m.drain, m.lost, m.adoptions, m.heals, m.tokenSave, m.tokenWait)
 	}
 	return m
 }
+
+// TokenSaved counts one token write-back result.
+func (m *Metrics) TokenSaved(result string) { m.tokenSave.WithLabelValues(result).Inc() }
+
+// TokenLockWaited observes one refresh Lease wait.
+func (m *Metrics) TokenLockWaited(d time.Duration) { m.tokenWait.Observe(d.Seconds()) }
 
 var (
 	descPods = prometheus.NewDesc(metrics.Namespace+"_mount_pods",

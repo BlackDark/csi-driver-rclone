@@ -133,6 +133,9 @@ func (s *Server) ensureMount(ctx context.Context, id, volumeID string, spec moun
 	if err := s.checkExclusive(ctx, id, volumeID); err != nil {
 		return nil, err
 	}
+	if s.deps.Tokens != nil && len(spec.Tokens) > 0 {
+		spec.Remote.ConfigData = s.deps.Tokens.Resolve(ctx, spec)
+	}
 	pod, secret, err := mountpod.Build(mountpod.Input{Config: s.cfg.Pod, NodeName: s.cfg.NodeID, VolumeID: volumeID, Spec: spec})
 	if err != nil {
 		return nil, specError(err)
