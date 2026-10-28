@@ -12,7 +12,7 @@ Follows https://github.com/BlackDark/agent-presets/blob/main/stack/core.md.
 Deviations:
 - Go, not TypeScript: CSI drivers, client-go, mount-utils and rclone are Go.
 - Helm is the only install method (OCI chart on GHCR); no kustomize or raw manifests.
-- Images: distroless, non-root, multi-stage, native amd64 + arm64 runners.
+- Images: distroless, non-root, multi-stage; amd64 + arm64 from one job, Go cross-compiled on the build platform (no QEMU).
 - golangci-lint in `mise run check` beside gofmt and go vet.
 - CI: `check` gates `mise run check` (includes csi-sanity, `test/sanity`), zizmor + actionlint, `test:fuse:host`, and e2e when it runs. e2e is opt-in: weekly schedule on main, manual `workflow_dispatch` (input `e2e`, any branch) and every release. Go caches restore everywhere except tag runs and save only on main. Docs-only PRs (`docs/**`, `*.md`) skip `test:fuse`. `release.yml` on `v*` tags calls `ci.yml` with `e2e: true`; `hack/release/check-main-ci.sh` requires the tag commit on main with a passing CI `check` there, and `hack/release/check-version.sh` ties the tag to Chart.yaml.
 
