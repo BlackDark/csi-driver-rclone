@@ -2,7 +2,6 @@ package rclonemount
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,7 +82,7 @@ func TestLoadConfigInMemory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := LoadConfig("[cfgtest]\ntype = local\n", ""); err != nil {
+	if err := LoadConfig("[cfgtest]\ntype = local\n"); err != nil {
 		t.Fatal(err)
 	}
 	f, err := fs.NewFs(context.Background(), "cfgtest:"+dir)
@@ -95,11 +94,5 @@ func TestLoadConfigInMemory(t *testing.T) {
 	}
 	if !config.LoadedData().HasSection("cfgtest") {
 		t.Error("section missing from in-memory storage")
-	}
-}
-
-func TestLoadConfigEncryptedNeedsPassword(t *testing.T) {
-	if err := LoadConfig("# c\nRCLONE_ENCRYPT_V0:\nabc", ""); !errors.Is(err, errNeedPassword) {
-		t.Fatalf("got %v", err)
 	}
 }

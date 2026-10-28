@@ -7,7 +7,7 @@ Keys read by Mount Spec resolution (`internal/mountspec`). Terms: [GLOSSARY.md](
 | Key | Meaning |
 |---|---|
 | `configData` | rclone INI config; may define several remotes (crypt over OneDrive, union). |
-| `configPassword` | Password for an rclone-encrypted `configData` (`rclone config encryption set`). The node plugin decrypts it to isolate remote names, so the Mount Pod Secret in the driver namespace holds the decrypted config. |
+| `configPassword` | Password for an rclone-encrypted `configData` (`rclone config encryption set`). The node plugin decrypts it to isolate remote names, so the Mount Pod Secret in the driver namespace holds the decrypted config and no password. |
 | `remoteType` | Shorthand instead of `configData`: backend type, e.g. `s3`. Every other key in the secret becomes a backend option of one generated remote (`access_key_id`, `secret_access_key`, `provider`, ...; dashes become underscores). |
 | `remotePath` | Path inside the remote. Optional; set it here or in the volume context, not both. |
 

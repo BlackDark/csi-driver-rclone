@@ -197,7 +197,7 @@ func (s *Server) loadSpec(ctx context.Context, id string) *mountspec.Spec {
 		s.deps.Log.Warn("adopted mount without its Secret; a crash is recovered by the next publish", "id", id, "err", err)
 		return nil
 	}
-	spec, err := mountspec.Load(sec.Data[mountpod.SpecKey], string(sec.Data[mountpod.PasswordKey]))
+	spec, err := mountspec.Load(sec.Data[mountpod.SpecKey])
 	if err != nil {
 		s.deps.Log.Warn("adopted mount with an unreadable spec; a crash is recovered by the next publish", "id", id, "err", err)
 		return nil

@@ -12,26 +12,12 @@ import (
 	"github.com/unknwon/goconfig" //nolint:misspell // real module path
 )
 
-const encryptedHeader = "RCLONE_ENCRYPT_V0:"
-
-var errNeedPassword = errors.New("rclonemount: configData is encrypted but no config password is set")
-
-// LoadConfig puts configData into rclone's in-memory config storage; nothing touches
-// disk. Errors never include config contents.
-func LoadConfig(configData, password string) error {
+// LoadConfig puts plaintext configData into rclone's in-memory config storage; nothing
+// touches disk. The node plugin decrypts encrypted configs before the Mount Pod sees
+// them. Errors never include config contents.
+func LoadConfig(configData string) error {
 	fs.GetConfig(context.Background()).AskPassword = false
-	if password != "" {
-		if err := config.SetConfigPassword(password); err != nil {
-			return fmt.Errorf("rclonemount: config password: %w", err)
-		}
-	} else if strings.Contains(configData, encryptedHeader) {
-		return errNeedPassword
-	}
-	plain, err := config.Decrypt(strings.NewReader(configData))
-	if err != nil {
-		return fmt.Errorf("rclonemount: decrypt config: %w", err)
-	}
-	sections, err := parseINI(plain)
+	sections, err := parseINI(strings.NewReader(configData))
 	if err != nil {
 		return err
 	}

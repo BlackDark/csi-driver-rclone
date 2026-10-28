@@ -33,8 +33,7 @@ const (
 	RunMountPath    = "/run/rclone-mount"
 	CacheMountPath  = "/cache"
 
-	SpecKey     = "spec.json"
-	PasswordKey = "config-password"
+	SpecKey = "spec.json"
 )
 
 const idLen = 16

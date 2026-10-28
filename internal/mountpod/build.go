@@ -91,9 +91,6 @@ func buildSecret(meta metav1.ObjectMeta, spec mountspec.Spec) (corev1.Secret, er
 		return corev1.Secret{}, fmt.Errorf("mountpod: serialize spec: %w", err)
 	}
 	data := map[string][]byte{SpecKey: file}
-	if spec.ConfigPassword != "" {
-		data[PasswordKey] = []byte(spec.ConfigPassword)
-	}
 	return corev1.Secret{
 		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
 		ObjectMeta: *meta.DeepCopy(),

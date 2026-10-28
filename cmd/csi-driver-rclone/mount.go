@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -19,9 +17,9 @@ import (
 
 // mountFlags are the Mount Pod's settings; defaults match docs/design/mount-pod-contract.md.
 type mountFlags struct {
-	spec, password, socket, cacheDir string
-	metricsAddr, volumeID            string
-	drainTimeout, unmountWait        time.Duration
+	spec, socket, cacheDir    string
+	metricsAddr, volumeID     string
+	drainTimeout, unmountWait time.Duration
 }
 
 func parseMountFlags(args []string, stderr io.Writer) (mountFlags, error) {
@@ -29,7 +27,6 @@ func parseMountFlags(args []string, stderr io.Writer) (mountFlags, error) {
 	fs := flag.NewFlagSet("mount", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&f.spec, "spec", "/etc/rclone-mount/spec.json", "Mount Spec file")
-	fs.StringVar(&f.password, "config-password", "/etc/rclone-mount/config-password", "config password file; missing means none")
 	fs.StringVar(&f.socket, "socket", "/run/rclone-mount/handoff.sock", "node plugin handoff socket")
 	fs.StringVar(&f.cacheDir, "cache-dir", "/cache", "rclone VFS cache directory")
 	fs.StringVar(&f.metricsAddr, "metrics-addr", ":9810", "address for /metrics and /healthz; empty disables")
@@ -45,28 +42,12 @@ func parseMountFlags(args []string, stderr io.Writer) (mountFlags, error) {
 	return f, nil
 }
 
-// readPassword returns "" when the optional file is absent.
-func readPassword(path string) (string, error) {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("mount: read config password: %w", err)
-	}
-	return strings.TrimRight(string(b), "\r\n"), nil
-}
-
 func loadSpec(f mountFlags) (mountspec.Spec, error) {
 	data, err := os.ReadFile(f.spec)
 	if err != nil {
 		return mountspec.Spec{}, fmt.Errorf("mount: read spec: %w", err)
 	}
-	password, err := readPassword(f.password)
-	if err != nil {
-		return mountspec.Spec{}, err
-	}
-	return mountspec.Load(data, password)
+	return mountspec.Load(data)
 }
 
 func runMount(args []string, stderr io.Writer) error {

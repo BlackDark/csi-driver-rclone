@@ -83,7 +83,7 @@ func Run(ctx context.Context, p Params) error {
 }
 
 func prepare(p Params) (Options, error) {
-	if err := LoadConfig(p.Spec.Remote.ConfigData, p.Spec.ConfigPassword); err != nil {
+	if err := LoadConfig(p.Spec.Remote.ConfigData); err != nil {
 		return Options{}, err
 	}
 	opts, err := BuildOptions(p.Spec.Options)

@@ -60,17 +60,3 @@ func TestNodeFlags(t *testing.T) {
 		}
 	}
 }
-
-func TestReadPasswordOptional(t *testing.T) {
-	dir := t.TempDir()
-	if pw, err := readPassword(filepath.Join(dir, "none")); err != nil || pw != "" {
-		t.Fatalf("absent: %q %v", pw, err)
-	}
-	p := filepath.Join(dir, "pw")
-	if err := os.WriteFile(p, []byte("s3cret\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if pw, err := readPassword(p); err != nil || pw != "s3cret" {
-		t.Fatalf("present: %q %v", pw, err)
-	}
-}

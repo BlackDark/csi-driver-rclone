@@ -11,8 +11,8 @@ const SpecFileVersion = 2
 
 const minSpecFileVersion = 1
 
-// File is spec.json in the owned Secret: the Mount Spec without the config password,
-// which travels as a separate Secret key.
+// File is spec.json in the owned Secret: the Mount Spec without the config password.
+// configData is already decrypted, so the Mount Pod needs no password.
 type File struct {
 	Version      int               `json:"version"`
 	ConfigData   string            `json:"configData"`
@@ -44,8 +44,9 @@ func (s Spec) Serialize() ([]byte, error) {
 	return json.Marshal(f)
 }
 
-// Load parses spec.json and attaches the separately stored config password.
-func Load(data []byte, configPassword string) (Spec, error) {
+// Load parses spec.json. A config-password key in Secrets written by earlier builds is
+// ignored: their configData was resolved before the password mattered to the Mount Pod.
+func Load(data []byte) (Spec, error) {
 	var f File
 	if err := json.Unmarshal(data, &f); err != nil {
 		return Spec{}, fmt.Errorf("mountspec: parse spec file: %w", err)
@@ -57,12 +58,11 @@ func Load(data []byte, configPassword string) (Spec, error) {
 		return Spec{}, fmt.Errorf("mountspec: spec file lacks configData or fsPath")
 	}
 	s := Spec{
-		Remote:         Remote{ConfigData: f.ConfigData, FsPath: f.FsPath},
-		ConfigPassword: configPassword,
-		Options:        f.Options,
-		Identity:       f.Identity,
-		Unrestricted:   f.Unrestricted,
-		CacheVolume:    f.CacheVolume,
+		Remote:       Remote{ConfigData: f.ConfigData, FsPath: f.FsPath},
+		Options:      f.Options,
+		Identity:     f.Identity,
+		Unrestricted: f.Unrestricted,
+		CacheVolume:  f.CacheVolume,
 	}
 	if f.Resources != nil {
 		s.Resources = *f.Resources

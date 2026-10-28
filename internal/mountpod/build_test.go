@@ -91,8 +91,8 @@ func TestNoCredentialsInPodSpec(t *testing.T) {
 	if len(c.Ports) != 1 || c.Ports[0].ContainerPort != MetricsPort {
 		t.Errorf("metrics port: %v", c.Ports)
 	}
-	if string(secret.Data[PasswordKey]) != password || !strings.Contains(string(secret.Data[SpecKey]), accessKey) {
-		t.Error("secret lacks spec or password")
+	if secret.Data["config-password"] != nil || !strings.Contains(string(secret.Data[SpecKey]), accessKey) {
+		t.Error("secret lacks spec or still carries a config password")
 	}
 }
 
