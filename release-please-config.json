@@ -19,7 +19,6 @@
   "packages": {
     ".": {
       "package-name": "csi-driver-rclone",
-      "release-as": "0.2.0",
       "extra-files": [
         { "type": "yaml", "path": "charts/csi-driver-rclone/Chart.yaml", "jsonpath": "$.version" },
         { "type": "yaml", "path": "charts/csi-driver-rclone/Chart.yaml", "jsonpath": "$.appVersion" }

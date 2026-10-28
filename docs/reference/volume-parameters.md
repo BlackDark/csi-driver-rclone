@@ -49,7 +49,7 @@ StorageClass parameters become the volume context of each provisioned PV. The co
 ## Rules
 
 - Credentials are rejected in the volume context: `configData`, `configPassword`, `remoteType`, and any key containing `password`, `pass`, `secret`, `token`, `key` or `credential`.
-- Mount Options must be on the allowlist ([spec](../spec/0001-csi-driver-rclone-v1.md#mount-spec-central-pure-module)) unless `allowAllOptions` is `true`.
+- Mount Options must be on the allowlist unless `allowAllOptions` is `true`: `vfs-cache-mode`, `vfs-cache-max-size`, `vfs-cache-min-free-space`, `vfs-cache-max-age`, `vfs-cache-poll-interval`, `vfs-read-ahead`, `vfs-read-chunk-size*`, `vfs-write-back`, `vfs-fast-fingerprint`, `dir-cache-time`, `poll-interval`, `attr-timeout`, `buffer-size`, `tpslimit`, `tpslimit-burst`, `bwlimit`, `bwlimit-file`, `transfers`, `checkers`, `retries`, `low-level-retries`, `timeout`, `contimeout`, `user-agent`, `uid`, `gid`, `umask`, `dir-perms`, `file-perms`, `read-only`, `log-level`, `no-modtime`, `no-checksum` (`*` matches by prefix). Backend options belong in `configData`.
 - Inline Volume subset: `read-only`, `vfs-cache-mode`, `vfs-cache-max-size`, `vfs-cache-max-age`, `vfs-read-ahead`, `vfs-read-chunk-size*`, `buffer-size`, `dir-cache-time`, `poll-interval`, `attr-timeout`, `uid`, `gid`, `umask`, `dir-perms`, `file-perms`, `log-level`, `no-modtime`, `no-checksum`. Rate limits, transfers, retries, `user-agent`, write-back and cache space settings stay with admins.
 - Always rejected, even with `allowAllOptions`: `log-file`, `rc*`, `daemon*`, `cache-dir`, `config`.
 - `allow-other` is always forced to `true`.
