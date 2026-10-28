@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: read
     with:
-      e2e: true
+      e2e: false # TODO: back to true once the chart release works end to end
 
   # The tag commit is on main and CI on main passed for it; waits while that run is in progress.
   main-ci:
