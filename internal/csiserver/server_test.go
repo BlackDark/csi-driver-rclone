@@ -55,7 +55,8 @@ func TestServeLogsWithoutSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = conn.Close() }()
-	if _, err := csi.NewIdentityClient(conn).Probe(ctx, &csi.ProbeRequest{}); err != nil {
+	// WaitForReady: Serve may not listen yet when the first call goes out.
+	if _, err := csi.NewIdentityClient(conn).Probe(ctx, &csi.ProbeRequest{}, grpc.WaitForReady(true)); err != nil {
 		t.Fatal(err)
 	}
 	req := &csi.NodePublishVolumeRequest{VolumeId: "v", Secrets: map[string]string{"k": "TOPSECRET"}}
