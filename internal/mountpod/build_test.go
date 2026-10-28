@@ -77,8 +77,9 @@ func TestNoCredentialsInPodSpec(t *testing.T) {
 			t.Error("config password in spec.json")
 		}
 	}
+	fixed := map[string]bool{"HOME": true, "XDG_CACHE_HOME": true}
 	for _, e := range c.Env {
-		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.FieldRef == nil {
+		if !fixed[e.Name] && (e.Value != "" || e.ValueFrom == nil || e.ValueFrom.FieldRef == nil) {
 			t.Errorf("env %s is not a downward API field: %v", e.Name, e)
 		}
 	}
@@ -132,6 +133,31 @@ func TestSecurityContext(t *testing.T) {
 	if *c.Privileged || *c.AllowPrivilegeEscalation || !*c.ReadOnlyRootFilesystem ||
 		len(c.Capabilities.Drop) != 1 || c.Capabilities.Drop[0] != "ALL" || len(c.Capabilities.Add) != 0 {
 		t.Errorf("container securityContext: %+v", c)
+	}
+}
+
+// The root filesystem is read-only; rclone derives backend defaults (cache backend db)
+// from HOME / XDG_CACHE_HOME before any flag applies, so both must be writable mounts.
+func TestWritableHomeAndCacheHome(t *testing.T) {
+	pod, _ := build(t, testInput(t, nil))
+	c := pod.Spec.Containers[0]
+	mounts := map[string]bool{}
+	for _, m := range c.VolumeMounts {
+		if !m.ReadOnly {
+			mounts[m.MountPath] = true
+		}
+	}
+	want := map[string]string{"HOME": "/tmp", "XDG_CACHE_HOME": CacheMountPath}
+	for _, e := range c.Env {
+		if v, ok := want[e.Name]; ok {
+			if e.Value != v || !mounts[v] {
+				t.Errorf("%s=%q, want writable mount %q", e.Name, e.Value, v)
+			}
+			delete(want, e.Name)
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("missing env %v", want)
 	}
 }
 
