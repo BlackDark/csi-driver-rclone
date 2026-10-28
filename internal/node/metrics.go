@@ -29,11 +29,14 @@ const (
 	AdoptCleaned = "cleaned"
 )
 
+var healResults = []string{HealEvicted, HealSkipped, HealBlocked}
+
 // Metrics are the node plugin's event counters.
 type Metrics struct {
 	drain     *prometheus.CounterVec
 	lost      prometheus.Counter
 	adoptions *prometheus.CounterVec
+	heals     *prometheus.CounterVec
 }
 
 // NewMetrics registers the counters on reg; a nil reg leaves them unregistered.
@@ -48,6 +51,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		adoptions: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: metrics.Namespace, Name: "adoptions_total", Help: "Mounts found by a node plugin restart, by result.",
 		}, []string{"result"}),
+		heals: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: metrics.Namespace, Name: "workload_heals_total",
+			Help: "Workload pods handled by healing after a lost Mount Pod, by result.",
+		}, []string{"result"}),
+	}
+	for _, r := range healResults {
+		m.heals.WithLabelValues(r)
 	}
 	for _, r := range []string{DrainDrained, DrainTimeout, DrainGone} {
 		m.drain.WithLabelValues(r)
@@ -56,7 +66,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.adoptions.WithLabelValues(r)
 	}
 	if reg != nil {
-		reg.MustRegister(m.drain, m.lost, m.adoptions)
+		reg.MustRegister(m.drain, m.lost, m.adoptions, m.heals)
 	}
 	return m
 }

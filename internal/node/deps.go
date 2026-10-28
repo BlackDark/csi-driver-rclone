@@ -7,6 +7,7 @@ import (
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,6 +37,11 @@ type Kube interface {
 	AnnotatePod(ctx context.Context, name, key, value string) error
 	// GetSecret returns nil, nil when the secret does not exist.
 	GetSecret(ctx context.Context, name string) (*corev1.Secret, error)
+	// GetWorkloadPod reads a pod in any namespace; nil, nil when it does not exist.
+	GetWorkloadPod(ctx context.Context, ns, name string) (*corev1.Pod, error)
+	// EvictPod evicts the pod with uid through the Eviction API, honouring PDBs.
+	// ErrEvictionBlocked when a PDB refuses; ErrPodReplaced when gone or uid differs.
+	EvictPod(ctx context.Context, ns, name string, uid types.UID) error
 }
 
 // FuseMounter performs the kernel FUSE mount (package fusemount).
@@ -172,4 +178,32 @@ func (k *clientKube) GetSecret(ctx context.Context, name string) (*corev1.Secret
 		return nil, fmt.Errorf("get secret %s: %w", name, err)
 	}
 	return sec, nil
+}
+
+func (k *clientKube) GetWorkloadPod(ctx context.Context, ns, name string) (*corev1.Pod, error) {
+	p, err := k.cs.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get pod %s/%s: %w", ns, name, err)
+	}
+	return p, nil
+}
+
+func (k *clientKube) EvictPod(ctx context.Context, ns, name string, uid types.UID) error {
+	ev := &policyv1.Eviction{
+		ObjectMeta:    metav1.ObjectMeta{Namespace: ns, Name: name},
+		DeleteOptions: &metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}},
+	}
+	err := k.cs.PolicyV1().Evictions(ns).Evict(ctx, ev)
+	switch {
+	case err == nil:
+		return nil
+	case apierrors.IsTooManyRequests(err):
+		return fmt.Errorf("evict pod %s/%s: %w: %w", ns, name, ErrEvictionBlocked, err)
+	case apierrors.IsNotFound(err) || apierrors.IsConflict(err):
+		return fmt.Errorf("evict pod %s/%s: %w", ns, name, ErrPodReplaced)
+	}
+	return fmt.Errorf("evict pod %s/%s: %w", ns, name, err)
 }

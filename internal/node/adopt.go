@@ -182,11 +182,13 @@ func (s *Server) cleanupMount(ctx context.Context, n nodeMount) {
 		s.restoreRefs(n.pod, n.targets)
 	}
 	now := metav1.NewTime(s.deps.Clock.Now())
+	refs := s.markDead(n.targets, msg)
 	var events []corev1.Event
-	for _, r := range s.markDead(n.targets, msg) {
+	for _, r := range refs {
 		events = append(events, warningEvent(r, ReasonMountLost, msg, s.cfg.NodeID, now))
 	}
 	s.emit(events)
+	s.startHeal(refs)
 }
 
 // loadSpec reads the Mount Spec back from the owned Secret; nil when it is missing or

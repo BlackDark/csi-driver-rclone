@@ -44,12 +44,16 @@ func (s *Server) drainTimeoutEvents(m *fuseMount) []corev1.Event {
 }
 
 func warningEvent(ref corev1.ObjectReference, reason, msg, node string, now metav1.Time) corev1.Event {
+	return newEvent(ref, corev1.EventTypeWarning, reason, msg, node, now)
+}
+
+func newEvent(ref corev1.ObjectReference, typ, reason, msg, node string, now metav1.Time) corev1.Event {
 	return corev1.Event{
 		ObjectMeta:     metav1.ObjectMeta{GenerateName: ref.Name + ".", Namespace: ref.Namespace},
 		InvolvedObject: ref,
 		Reason:         reason,
 		Message:        msg,
-		Type:           corev1.EventTypeWarning,
+		Type:           typ,
 		Source:         corev1.EventSource{Component: "csi-driver-rclone-node", Host: node},
 		FirstTimestamp: now,
 		LastTimestamp:  now,

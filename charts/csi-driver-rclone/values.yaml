@@ -87,6 +87,12 @@ mountPod:
   unmountWait: 30s
   # Mount Pod tolerations; null or [] (default null) uses node.tolerations.
   tolerations: null
+  # After a lost Mount Pod, evict the workload pods whose mount died, so their
+  # controller recreates them and they remount. Pods without a controller are
+  # left alone. Grants the node plugin cluster-wide pods get + pods/eviction
+  # create. Risks: docs/operations.md.
+  healWorkloads:
+    enabled: false
   # Default Mount Pod resources. Volume context keys mountPod.cpuRequest,
   # cpuLimit, memoryRequest and memoryLimit override them per field. No memory
   # limit by default: an OOM kill drops pending uploads. Sizing: docs/operations.md.

@@ -60,6 +60,7 @@ func parseNodeFlags(args []string, stderr io.Writer) (nodeFlags, error) {
 	fs.DurationVar(&f.cfg.Linger, "linger", 2*time.Minute, "how long an unused Mount Pod stays up; 0 stops it at once")
 	fs.DurationVar(&p.DrainTimeout, "drain-timeout", 5*time.Minute, "Mount Pod upload drain bound on stop")
 	fs.DurationVar(&p.UnmountWait, "unmount-wait", 30*time.Second, "Mount Pod wait for the external unmount after draining")
+	fs.BoolVar(&f.cfg.HealWorkloads, "heal-workloads", false, "evict controller-owned workload pods whose Mount Pod was lost, so they remount")
 	fs.StringVar(&f.metricsAddr, "metrics-addr", ":9809", "address for /metrics; empty disables")
 	fs.TextVar(&f.logLevel, "log-level", slog.LevelInfo, "log level")
 	if err := fs.Parse(args); err != nil {

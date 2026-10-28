@@ -39,7 +39,7 @@ subjects:
     name: {{ include "csi-driver-rclone.fullname" . }}-node
     namespace: {{ .Release.Namespace }}
 ---
-# Drain-timeout Events go on the workload pod, which may be in any namespace.
+# Drain-timeout and MountLost Events go on the workload pod, which may be in any namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -50,6 +50,15 @@ rules:
   - apiGroups: [""]
     resources: [events]
     verbs: [create, patch]
+  {{- if .Values.mountPod.healWorkloads.enabled }}
+  # Workload healing (mountPod.healWorkloads): evict pods whose Mount Pod was lost.
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

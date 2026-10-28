@@ -61,6 +61,7 @@ spec:
             - --linger={{ .Values.mountPod.linger }}
             - --drain-timeout={{ .Values.mountPod.drainTimeout }}
             - --unmount-wait={{ .Values.mountPod.unmountWait }}
+            - --heal-workloads={{ .Values.mountPod.healWorkloads.enabled }}
             - --log-level={{ .Values.logLevel }}
             - --metrics-addr={{ if .Values.metrics.enabled }}:{{ .Values.metrics.port }}{{ end }}
           env:

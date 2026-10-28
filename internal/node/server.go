@@ -24,6 +24,8 @@ type Config struct {
 	PublishTimeout time.Duration
 	// Linger keeps an unused Mount Pod up this long; zero or less stops it at once.
 	Linger time.Duration
+	// HealWorkloads evicts controller-owned workload pods whose Mount Pod was lost.
+	HealWorkloads bool
 }
 
 // Deps are the side effects, injected so tests can fake them.

@@ -539,6 +539,35 @@
           "legendFormat": "{{volume_id}} dirs"
         }
       ]
+    },
+    {
+      "id": 17,
+      "type": "bargauge",
+      "title": "Workload heals (1h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result) (increase(csi_rclone_workload_heals_total{job=~\"$job\"}[1h]))",
+          "legendFormat": "{{result}}"
+        }
+      ]
     }
   ]
 }

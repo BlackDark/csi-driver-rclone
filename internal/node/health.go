@@ -102,7 +102,7 @@ func (s *Server) monitor(m *fuseMount) {
 
 // recoverMount reports the dead binds of a lost Mount Pod and replaces the Pod, so new
 // publishes work. A running FUSE connection cannot be resumed (ADR 0003): existing
-// binds stay dead until their pod restarts.
+// binds stay dead until their pod restarts, which --heal-workloads automates.
 func (s *Server) recoverMount(m *fuseMount, reason string) {
 	unlock := s.locks.lock(m.id)
 	defer unlock()
@@ -116,6 +116,8 @@ func (s *Server) recoverMount(m *fuseMount, reason string) {
 		"(transport endpoint is not connected); restart the pod to remount it", m.name, m.volumeID, reason)
 	s.deps.Log.Warn("mount pod lost", "id", m.id, "pod", m.name, "reason", reason, "targets", len(targets))
 	refs := s.markDead(targets, msg)
+	// Deferred: heal after the replacement Mount Pod is ready, or once recreating gave up.
+	defer s.startHeal(refs)
 	s.deps.Metrics.lost.Inc()
 	s.emit(s.mountLostEvents(m, refs, msg))
 
