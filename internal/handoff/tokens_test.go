@@ -213,7 +213,9 @@ func TestUnsavedTokenResentAfterReconnect(t *testing.T) {
 	defer stop()
 	go s.Run(ctx)
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, func() bool { return s.current() == nil })
 	if err := s.SaveToken("a", "fresh"); err == nil {
 		t.Fatal("save without a connection reported success")
