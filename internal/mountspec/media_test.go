@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The media-stack migration example from docs/spec/0001 "Further Notes".
+// The media-stack migration example in docs/guides/migrate-from-systemd.md.
 func TestMediaStack(t *testing.T) {
 	const configData = `[onedrive]
 type = onedrive
