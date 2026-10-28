@@ -187,7 +187,7 @@ jobs:
           helm registry login ghcr.io -u "$REGISTRY_USER" --password-stdin <<< "$REGISTRY_TOKEN"
           cosign login ghcr.io -u "$REGISTRY_USER" --password-stdin <<< "$REGISTRY_TOKEN"
           pkg=$(helm package charts/csi-driver-rclone -d "$RUNNER_TEMP" | sed -n 's/^Successfully packaged chart and saved it to: //p')
-          out=$(helm push "$pkg" "$CHART_REPO" 2>&1)
+          out=$(helm push "$pkg" "$CHART_REPO" 2>&1) || { echo "$out"; exit 1; }
           echo "$out"
           digest=$(sed -n 's/^Digest: *//p' <<< "$out")
           [ -n "$digest" ] || { echo "::error::no digest in helm push output"; exit 1; }
