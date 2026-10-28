@@ -43,6 +43,8 @@ type tokenHook struct {
 	locker   tokenLocker
 	held     map[string]*time.Timer // by isolated section
 	failures map[string]uint64      // lock failures by isolated section
+	idle     chan struct{}          // closed when held becomes empty; nil while it is
+	queued   func()                 // tests only: runs once a read took its failure snapshot
 }
 
 func newTokenHook(tokens []mountspec.TokenSection, log *slog.Logger) *tokenHook {
@@ -80,6 +82,9 @@ func (h *tokenHook) getValue(section, key string) (string, bool) {
 	h.mu.Lock()
 	queuedAt := h.failures[section]
 	h.mu.Unlock()
+	if h.queued != nil {
+		h.queued() // test seam: this read has its failure snapshot
+	}
 	h.lockMu[section].Lock()
 	defer h.lockMu[section].Unlock()
 	if v, ok = h.get(section, key); h.valid(v) {
@@ -137,7 +142,32 @@ func (h *tokenHook) forget(section string) bool {
 	if t != nil {
 		t.Stop()
 	}
+	if len(h.held) == 0 && h.idle != nil {
+		close(h.idle)
+		h.idle = nil
+	}
 	return t != nil
+}
+
+// waitIdle blocks until no refresh holds the lock, or ctx is done. Called on stop
+// after the VFS is shut down, so a refresh still running can report its token.
+func (h *tokenHook) waitIdle(ctx context.Context) bool {
+	h.mu.Lock()
+	if len(h.held) == 0 {
+		h.mu.Unlock()
+		return true
+	}
+	if h.idle == nil {
+		h.idle = make(chan struct{})
+	}
+	ch := h.idle
+	h.mu.Unlock()
+	select {
+	case <-ch:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (h *tokenHook) setValue(section, key, value string) error {

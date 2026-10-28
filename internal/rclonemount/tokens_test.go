@@ -174,12 +174,15 @@ func TestHookSkipsLockOnlyForCallersQueuedBehindAFailure(t *testing.T) {
 	l := &blockingLocker{fakeLocker: fakeLocker{err: errors.New("denied")},
 		calls: make(chan struct{}, 4), release: make(chan struct{})}
 	h.attach(l)
+	snapshots := make(chan struct{}, 4)
+	h.queued = func() { snapshots <- struct{}{} }
 	done := make(chan struct{}, 2)
 	read := func() { h.getValue("box_1", "token"); done <- struct{}{} }
 	go read()
+	<-snapshots
 	<-l.calls // first request is waiting on the plugin
-	go read() // queued behind it on the section mutex
-	time.Sleep(20 * time.Millisecond)
+	go read()
+	<-snapshots // the second read took its snapshot before the failure
 	close(l.release)
 	<-done
 	<-done
@@ -189,5 +192,24 @@ func TestHookSkipsLockOnlyForCallersQueuedBehindAFailure(t *testing.T) {
 	h.getValue("box_1", "token")
 	if l.locks != 2 {
 		t.Fatalf("locks %d, want 2: a later read must ask again", l.locks)
+	}
+}
+
+// waitIdle returns once a held refresh lock is released by its save.
+func TestHookWaitIdleUntilSave(t *testing.T) {
+	old := oauthTok("old", hookNow.Add(-time.Hour))
+	h, _ := testHook(old)
+	h.attach(&fakeLocker{newest: old})
+	h.getValue("box_1", "token") // takes and holds the lock
+	short, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if h.waitIdle(short) {
+		t.Fatal("idle while a refresh holds the lock")
+	}
+	go func() { _ = h.setValue("box_1", "token", oauthTok("fresh", hookNow.Add(time.Hour))) }()
+	ctx, cancel2 := context.WithTimeout(context.Background(), time.Second)
+	defer cancel2()
+	if !h.waitIdle(ctx) {
+		t.Fatal("not idle after the save")
 	}
 }

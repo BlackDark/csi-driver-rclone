@@ -92,7 +92,23 @@ func Run(ctx context.Context, p Params) error {
 	}
 	p.Log.Info("mount ready", "fs", p.Spec.Remote.FsPath, "identity", p.Spec.Identity, "tokenWriteBack", len(p.Spec.Tokens))
 	ready.Store(true)
-	return stop(ctx, p, mp, session, func() { ready.Store(false) })
+	err = stop(ctx, p, mp, session, func() { ready.Store(false) })
+	flushTokens(hook, session, p.Log)
+	return err
+}
+
+// flushTokens runs after the VFS is shut down, before the session closes: a refresh
+// still holding the lock reports its token, and every reported token is confirmed.
+// A refreshed token not yet in the Token Secret would be spent for the next Mount Pod.
+func flushTokens(hook *tokenHook, session *handoff.Session, log *slog.Logger) {
+	if hook == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), tokenSaveWait)
+	defer cancel()
+	if !hook.waitIdle(ctx) || !session.WaitTokensSaved(ctx) {
+		log.Warn("token write-back: refreshed token not confirmed before exit", "waited", tokenSaveWait)
+	}
 }
 
 func prepare(p Params) (Options, error) {
@@ -158,12 +174,6 @@ func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *hando
 		p.Log.Warn("report drain result", "msg", msg, "err", err)
 	}
 	p.Log.Info("drain finished", "result", msg)
-	// A refreshed token not yet in the Token Secret would be spent for the next Mount Pod.
-	wctx, wcancel := context.WithTimeout(context.Background(), tokenSaveWait)
-	if !session.WaitTokensSaved(wctx) {
-		p.Log.Warn("token write-back: refreshed token not confirmed before exit", "waited", tokenSaveWait)
-	}
-	wcancel()
 	if !served {
 		select {
 		case serveErr = <-mp.ErrChan:
