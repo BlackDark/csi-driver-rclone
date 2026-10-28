@@ -2,11 +2,11 @@ apiVersion: v2
 name: csi-driver-rclone
 description: Kubernetes CSI driver mounting rclone remotes as volumes
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: 0.2.0
 home: https://github.com/BlackDark/csi-driver-rclone
 sources:
   - https://github.com/BlackDark/csi-driver-rclone
-kubeVersion: ">=1.34.0-0"
+kubeVersion: '>=1.34.0-0'
 annotations:
   artifacthub.io/license: Apache-2.0
