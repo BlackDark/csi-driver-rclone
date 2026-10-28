@@ -46,7 +46,7 @@ The node plugin is privileged, so its namespace needs the `privileged` Pod Secur
 ```bash
 kubectl create namespace csi-rclone
 kubectl label namespace csi-rclone pod-security.kubernetes.io/enforce=privileged
-helm install csi-rclone oci://ghcr.io/blackdark/charts/csi-driver-rclone --version <version> -n csi-rclone
+helm install csi-rclone oci://ghcr.io/blackdark/csi-driver-rclone/charts/csi-driver-rclone --version <version> -n csi-rclone
 ```
 
 The image defaults to `ghcr.io/blackdark/csi-driver-rclone:<appVersion>`. Chart values: [values.yaml](charts/csi-driver-rclone/values.yaml). Verify signatures with:
