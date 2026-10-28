@@ -4,7 +4,7 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] e2e: after a chart upgrade, an in-use Mount Pod keeps its image; reuse after the Linger gets the new one
-- [ ] The docs include the memory sizing formula
+- [x] e2e: after a chart upgrade, an in-use Mount Pod keeps its image; reuse after the Linger gets the new one
+- [x] The docs include the memory sizing formula
