@@ -51,10 +51,7 @@ func container(in Input, res corev1.ResourceRequirements) corev1.Container {
 			"--drain-timeout=" + c.DrainTimeout.String(),
 			"--unmount-wait=" + c.UnmountWait.String(),
 		},
-		// The volume ID labels the metrics; from the annotation, it needs no escaping.
-		Env: []corev1.EnvVar{{Name: "VOLUME_ID", ValueFrom: &corev1.EnvVarSource{
-			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations['" + AnnotationVolID + "']"},
-		}}},
+		Env:   env(),
 		Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: MetricsPort, Protocol: corev1.ProtocolTCP}},
 		// Readiness only: a crashed rclone ends the pod (RestartPolicy Never) and the
 		// node plugin replaces it, so a liveness restart has nothing to add.
@@ -77,6 +74,20 @@ func container(in Input, res corev1.ResourceRequirements) corev1.Container {
 			{Name: volCache, MountPath: CacheMountPath},
 			{Name: volTmp, MountPath: "/tmp"},
 		},
+	}
+}
+
+// env: the root filesystem is read-only, and rclone resolves backend defaults such as
+// the cache backend's db path from the user cache dir at process start, before
+// --cache-dir applies. Point both at writable mounts.
+func env() []corev1.EnvVar {
+	return []corev1.EnvVar{
+		// The volume ID labels the metrics; from the annotation, it needs no escaping.
+		{Name: "VOLUME_ID", ValueFrom: &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations['" + AnnotationVolID + "']"},
+		}},
+		{Name: "HOME", Value: "/tmp"},
+		{Name: "XDG_CACHE_HOME", Value: CacheMountPath},
 	}
 }
 
