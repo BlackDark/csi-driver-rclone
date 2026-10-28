@@ -17,5 +17,6 @@ COPY --from=build /out/csi-driver-rclone /csi-driver-rclone
 ARG VERSION=dev
 LABEL org.opencontainers.image.source="https://github.com/BlackDark/csi-driver-rclone" \
       org.opencontainers.image.description="Kubernetes CSI driver mounting rclone remotes as volumes" \
-      org.opencontainers.image.version="${VERSION}"
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.licenses="Apache-2.0"
 ENTRYPOINT ["/csi-driver-rclone"]

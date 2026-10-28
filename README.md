@@ -185,3 +185,7 @@ mise run e2e:down
 ```
 
 Release: set `version` and `appVersion` in `charts/csi-driver-rclone/Chart.yaml` to `X.Y.Z`, then push tag `vX.Y.Z`. `release.yml` runs CI, publishes image tags `X.Y.Z`, `X.Y`, `latest` and the chart, and creates the GitHub release. A manual run on a branch publishes image tag `edge` only.
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE).
