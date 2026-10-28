@@ -10,7 +10,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   schedule:
     - cron: "17 3 * * 1" # Mondays 03:17 UTC, e2e on main
   workflow_dispatch:
