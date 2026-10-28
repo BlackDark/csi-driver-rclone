@@ -30,6 +30,8 @@ All series also come with the Go runtime and process collectors (`go_*`, `proces
 | `csi_rclone_mount_healthy` | gauge | `id`, `volume_id` | 1 when the Mount Pod serves its mount; 0 while starting or once lost |
 | `csi_rclone_drain_total` | counter | `result` | Mount Pod stops: `drained`, `timeout` (uploads left in the Cache, also a `DrainTimeout` Event), `gone` (exited without a report, e.g. lost) |
 | `csi_rclone_mount_lost_total` | counter | | Mount Pods that stopped without the plugin asking (also a `MountLost` Event) |
+| `csi_rclone_token_writebacks_total` | counter | `result` | Refreshed OAuth tokens reported by Mount Pods: `written`, `unchanged`, `stale` (a later token was already stored), `error` |
+| `csi_rclone_token_lock_wait_seconds` | histogram | | Time a Mount Pod waited for the token refresh Lease |
 | `csi_rclone_adoptions_total` | counter | `result` | Mounts found when the node plugin starts: `adopted` or `cleaned` (not adoptable, removed) |
 | `csi_rclone_workload_heals_total` | counter | `result` | Workload pods handled by healing after a lost Mount Pod (`mountPod.healWorkloads`): `evicted`, `skipped` (no controller), `blocked` (PDB or API error) |
 

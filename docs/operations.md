@@ -36,6 +36,27 @@ Risks:
 - A StatefulSet pod with a single replica and a PDB of `minAvailable: 1` is never evicted; it gets `HealBlocked`.
 - RBAC: the node plugin gains cluster-wide pods `get` and `pods/eviction` `create`. A compromised node plugin, already privileged on its node, could then evict pods anywhere in the cluster.
 
+## OAuth tokens and git rollouts
+
+Backends with OAuth (Box, OneDrive, Google Drive, Dropbox, …) keep a `token` line in `configData`. rclone refreshes it inside the Mount Pod; Box refresh tokens work once, OneDrive rotates them. Token Write-back (on by default, ADR 0004) stores each refreshed token in a Token Secret in the driver namespace, so a new Mount Pod starts from the newest token and two processes on one token never refresh at the same time.
+
+- Keep the initial token in git (the Credential Secret) and never copy refreshed tokens back. The driver never writes the Credential Secret, so a GitOps sync cannot revert a refresh.
+- Re-authorize (`rclone config reconnect box:`, then put the new `token` into the Credential Secret): the new token has a new seed hash, so it wins at the next publish and seeds a new Token Secret. Mount Pods already running on the old token keep it until they are replaced.
+- Changing anything else in `configData` (backends, crypt, options) is safe; only `token` lines are taken from the Token Secret. Renaming a section keeps its token: the Token Secret is keyed by the seed token, not the section name.
+- A volume with `tokenWriteBack: "false"` behaves as before: the refreshed token lives only in its Mount Pod.
+
+Inspect, without printing tokens:
+
+```bash
+kubectl -n csi-rclone get secret -l app.kubernetes.io/component=token \
+  -o custom-columns='NAME:.metadata.name,SECTION:.metadata.annotations.rclone\.csi\.blackdark\.github\.io/section'
+kubectl -n csi-rclone get lease | grep rclone-token-   # holder while a refresh runs
+```
+
+Reset: delete the Token Secret, and the next publish reseeds it from the Credential Secret. That only works if the token in git is still valid; otherwise re-authorize. Token Secrets and their Leases are not garbage collected; remove unused ones with `kubectl -n csi-rclone delete secret -l app.kubernetes.io/component=token` (in-use ones are reseeded at the next publish, see Reset) and delete the matching `rclone-token-*` Leases.
+
+Watch `csi_rclone_token_writebacks_total{result="error"}` and Mount Pod logs for `token write-back` warnings: without the lock, rclone refreshes as before, which can spend a single-use refresh token twice.
+
 ## Upgrades
 
 A Mount Pod's image is fixed for its lifetime. The image is not part of the Mount Spec Identity, so a new driver image never makes an existing Mount Pod stale.

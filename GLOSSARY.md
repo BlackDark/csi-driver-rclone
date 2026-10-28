@@ -28,4 +28,8 @@
 
 **Mount Lost**: A Mount Pod that stopped while the node plugin did not stop it. Its binds return `ENOTCONN` until their pods restart. The plugin emits a `MountLost` Event and recreates the Mount Pod.
 
+**Token Write-back**: Keeping an OAuth token that rclone refreshed inside a Mount Pod, so the next Mount Pod and every other process on the same token use the newest one. One refresher at a time holds a refresh Lease. On by default; `tokenWriteBack: "false"` opts a volume out.
+
+**Token Secret**: The driver-owned Secret in the driver namespace that holds the current token of one OAuth grant, keyed by the hash of the token it was seeded from in the Credential Secret. The Credential Secret is never written.
+
 **Heal**: Opt-in eviction of a controller-owned workload pod after its Mount Lost, so its controller recreates it and it remounts. Bare pods are not healed.
