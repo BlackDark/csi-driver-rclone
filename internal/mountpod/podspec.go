@@ -2,6 +2,7 @@ package mountpod
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
@@ -11,6 +12,9 @@ const (
 	volCache  = "cache"
 	volTmp    = "tmp"
 )
+
+// MetricsPort serves the Mount Pod's /metrics and /healthz (mount --metrics-addr default).
+const MetricsPort = 9810
 
 // podSpec pins the pod to its node. RestartPolicy Never: a restarted container would
 // need a fresh FUSE fd, so the node plugin recreates the whole pod instead.
@@ -46,6 +50,17 @@ func container(in Input, res corev1.ResourceRequirements) corev1.Container {
 			"mount",
 			"--drain-timeout=" + c.DrainTimeout.String(),
 			"--unmount-wait=" + c.UnmountWait.String(),
+		},
+		// The volume ID labels the metrics; from the annotation, it needs no escaping.
+		Env: []corev1.EnvVar{{Name: "VOLUME_ID", ValueFrom: &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations['" + AnnotationVolID + "']"},
+		}}},
+		Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: MetricsPort, Protocol: corev1.ProtocolTCP}},
+		// Readiness only: a crashed rclone ends the pod (RestartPolicy Never) and the
+		// node plugin replaces it, so a liveness restart has nothing to add.
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("metrics")}},
+			PeriodSeconds: 10, FailureThreshold: 3, TimeoutSeconds: 5,
 		},
 		Resources: res,
 		SecurityContext: &corev1.SecurityContext{

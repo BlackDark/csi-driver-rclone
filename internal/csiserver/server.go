@@ -31,8 +31,9 @@ func SocketPath(endpoint string) (string, error) {
 	return p, nil
 }
 
-// Serve listens on endpoint until ctx is done. register adds the CSI services.
-func Serve(ctx context.Context, endpoint string, log *slog.Logger, register func(*grpc.Server)) error {
+// Serve listens on endpoint until ctx is done. register adds the CSI services; extra
+// interceptors run inside the logging one.
+func Serve(ctx context.Context, endpoint string, log *slog.Logger, register func(*grpc.Server), extra ...grpc.UnaryServerInterceptor) error {
 	path, err := SocketPath(endpoint)
 	if err != nil {
 		return err
@@ -44,7 +45,7 @@ func Serve(ctx context.Context, endpoint string, log *slog.Logger, register func
 	if err != nil {
 		return fmt.Errorf("csiserver: listen: %w", err)
 	}
-	srv := grpc.NewServer(grpc.UnaryInterceptor(LogInterceptor(log)))
+	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(append([]grpc.UnaryServerInterceptor{LogInterceptor(log)}, extra...)...))
 	register(srv)
 	stop := context.AfterFunc(ctx, srv.GracefulStop)
 	defer stop()

@@ -20,6 +20,7 @@ import (
 // mountFlags are the Mount Pod's settings; defaults match docs/design/mount-pod-contract.md.
 type mountFlags struct {
 	spec, password, socket, cacheDir string
+	metricsAddr, volumeID            string
 	drainTimeout, unmountWait        time.Duration
 }
 
@@ -31,6 +32,8 @@ func parseMountFlags(args []string, stderr io.Writer) (mountFlags, error) {
 	fs.StringVar(&f.password, "config-password", "/etc/rclone-mount/config-password", "config password file; missing means none")
 	fs.StringVar(&f.socket, "socket", "/run/rclone-mount/handoff.sock", "node plugin handoff socket")
 	fs.StringVar(&f.cacheDir, "cache-dir", "/cache", "rclone VFS cache directory")
+	fs.StringVar(&f.metricsAddr, "metrics-addr", ":9810", "address for /metrics and /healthz; empty disables")
+	fs.StringVar(&f.volumeID, "volume-id", os.Getenv("VOLUME_ID"), "volume ID labelling the metrics (env VOLUME_ID)")
 	fs.DurationVar(&f.drainTimeout, "drain-timeout", 5*time.Minute, "bound on waiting for pending uploads on stop")
 	fs.DurationVar(&f.unmountWait, "unmount-wait", 30*time.Second, "how long to wait for the node plugin to unmount after draining")
 	if err := fs.Parse(args); err != nil {
@@ -85,6 +88,8 @@ func runMount(args []string, stderr io.Writer) error {
 		UnmountWait:      f.unmountWait,
 		ReconnectBackoff: time.Second,
 		DrainPoll:        time.Second,
+		MetricsAddr:      f.metricsAddr,
+		VolumeID:         f.volumeID,
 		Log:              slog.New(slog.NewJSONHandler(os.Stdout, nil)),
 	})
 }

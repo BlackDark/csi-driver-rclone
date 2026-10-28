@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
@@ -16,11 +17,13 @@ import (
 	"github.com/BlackDark/csi-driver-rclone/internal/controller"
 	"github.com/BlackDark/csi-driver-rclone/internal/csiserver"
 	"github.com/BlackDark/csi-driver-rclone/internal/identity"
+	"github.com/BlackDark/csi-driver-rclone/internal/metrics"
 )
 
 type controllerFlags struct {
-	endpoint string
-	logLevel slog.Level
+	endpoint    string
+	metricsAddr string
+	logLevel    slog.Level
 }
 
 func parseControllerFlags(args []string, stderr io.Writer) (controllerFlags, error) {
@@ -28,6 +31,7 @@ func parseControllerFlags(args []string, stderr io.Writer) (controllerFlags, err
 	fs := flag.NewFlagSet("controller", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&f.endpoint, "endpoint", "unix:///csi/csi.sock", "CSI endpoint")
+	fs.StringVar(&f.metricsAddr, "metrics-addr", ":9809", "address for /metrics; empty disables")
 	fs.TextVar(&f.logLevel, "log-level", slog.LevelInfo, "log level")
 	if err := fs.Parse(args); err != nil {
 		return f, err
@@ -46,8 +50,11 @@ func runController(args []string, stderr io.Writer) error {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: f.logLevel}))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+	reg := metrics.NewRegistry()
+	rpc := metrics.NewGRPC(reg)
+	metrics.ServeBackground(ctx, f.metricsAddr, metrics.Handler(reg, nil), log)
 	return csiserver.Serve(ctx, f.endpoint, log, func(g *grpc.Server) {
 		csi.RegisterIdentityServer(g, &identity.Server{Version: version, Controller: true})
 		csi.RegisterControllerServer(g, &controller.Server{Log: log})
-	})
+	}, rpc.Interceptor(time.Now))
 }

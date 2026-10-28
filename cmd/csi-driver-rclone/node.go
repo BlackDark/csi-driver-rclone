@@ -23,6 +23,7 @@ import (
 
 	"github.com/BlackDark/csi-driver-rclone/internal/csiserver"
 	"github.com/BlackDark/csi-driver-rclone/internal/identity"
+	"github.com/BlackDark/csi-driver-rclone/internal/metrics"
 	"github.com/BlackDark/csi-driver-rclone/internal/node"
 )
 
@@ -34,6 +35,7 @@ type nodeFlags struct {
 	cfg         node.Config
 	uid, gid    int64
 	tolerations string
+	metricsAddr string
 	logLevel    slog.Level
 }
 
@@ -56,6 +58,7 @@ func parseNodeFlags(args []string, stderr io.Writer) (nodeFlags, error) {
 	fs.DurationVar(&f.cfg.Linger, "linger", 2*time.Minute, "how long an unused Mount Pod stays up; 0 stops it at once")
 	fs.DurationVar(&p.DrainTimeout, "drain-timeout", 5*time.Minute, "Mount Pod upload drain bound on stop")
 	fs.DurationVar(&p.UnmountWait, "unmount-wait", 30*time.Second, "Mount Pod wait for the external unmount after draining")
+	fs.StringVar(&f.metricsAddr, "metrics-addr", ":9809", "address for /metrics; empty disables")
 	fs.TextVar(&f.logLevel, "log-level", slog.LevelInfo, "log level")
 	if err := fs.Parse(args); err != nil {
 		return f, err
@@ -98,15 +101,20 @@ func runNode(args []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("node: kube client: %w", err)
 	}
+	reg := metrics.NewRegistry()
 	srv := node.New(f.cfg, node.Deps{
 		Kube:    node.NewKube(cs, f.cfg.Pod.Namespace),
 		Mounter: node.NewBindMounter(),
 		Fuse:    node.RealFuse{},
 		Handoff: node.RealHandoff{},
 		Log:     log,
+		Metrics: node.NewMetrics(reg),
 	})
+	reg.MustRegister(srv.Collector())
+	rpc := metrics.NewGRPC(reg)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+	metrics.ServeBackground(ctx, f.metricsAddr, metrics.Handler(reg, nil), log)
 	if err := srv.Adopt(ctx); err != nil {
 		return fmt.Errorf("node: %w", err)
 	}
@@ -114,7 +122,7 @@ func runNode(args []string, stderr io.Writer) error {
 	return csiserver.Serve(ctx, f.endpoint, log, func(g *grpc.Server) {
 		csi.RegisterIdentityServer(g, &identity.Server{Version: version})
 		csi.RegisterNodeServer(g, srv)
-	})
+	}, rpc.Interceptor(time.Now))
 }
 
 // watchMountPods feeds this node's Mount Pod changes to srv until ctx is done.

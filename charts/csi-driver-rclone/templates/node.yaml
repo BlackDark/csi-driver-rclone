@@ -61,6 +61,7 @@ spec:
             - --drain-timeout={{ .Values.mountPod.drainTimeout }}
             - --unmount-wait={{ .Values.mountPod.unmountWait }}
             - --log-level={{ .Values.logLevel }}
+            - --metrics-addr={{ if .Values.metrics.enabled }}:{{ .Values.metrics.port }}{{ end }}
           env:
             - name: NODE_ID
               valueFrom:
@@ -78,6 +79,10 @@ spec:
             runAsNonRoot: false
             readOnlyRootFilesystem: true
           ports:
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
             - name: healthz
               containerPort: {{ .Values.sidecars.livenessProbe.port }}
           livenessProbe:

@@ -73,9 +73,11 @@ func (s *Server) finishTeardown(m *fuseMount) bool {
 	t := time.NewTimer(s.teardownTimeout())
 	defer t.Stop()
 	timedOut := false
+	result := DrainGone
 	select {
 	case <-m.drained:
 		timedOut = m.drainTimedOut
+		result = DrainDrained
 		s.deps.Log.Info("mount pod drain result", "id", m.id, "timedOut", timedOut)
 	case <-m.gone:
 	case <-m.served:
@@ -84,8 +86,10 @@ func (s *Server) finishTeardown(m *fuseMount) bool {
 		s.deps.Log.Warn("mount pod drain result not received", "id", m.id)
 	}
 	if timedOut {
+		result = DrainTimeout
 		s.reportDrainTimeout(m)
 	}
+	s.deps.Metrics.drain.WithLabelValues(result).Inc()
 	s.stopMount(m)
 	ctx, cancel := context.WithTimeout(context.Background(), kubeCallTimeout)
 	defer cancel()

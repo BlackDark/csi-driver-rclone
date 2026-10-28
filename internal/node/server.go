@@ -39,6 +39,8 @@ type Deps struct {
 	Statfs    func(path string) (Usage, error)
 	Clock     clock.WithDelayedExecution
 	Log       *slog.Logger
+	// Metrics are the event counters; nil gets an unregistered set.
+	Metrics *Metrics
 }
 
 // Server is the CSI Node service.
@@ -58,7 +60,7 @@ type Server struct {
 	bg   sync.WaitGroup
 }
 
-// New returns a Server; nil Users, PrepareDir, MountInfo, Statfs or Clock get the defaults.
+// New returns a Server; nil Users, PrepareDir, MountInfo, Statfs, Clock or Metrics get the defaults.
 func New(cfg Config, deps Deps) *Server {
 	if deps.Users == nil {
 		deps.Users = NewUsers()
@@ -74,6 +76,9 @@ func New(cfg Config, deps Deps) *Server {
 	}
 	if deps.Clock == nil {
 		deps.Clock = clock.RealClock{}
+	}
+	if deps.Metrics == nil {
+		deps.Metrics = NewMetrics(nil)
 	}
 	return &Server{cfg: cfg, deps: deps, mounts: map[string]*fuseMount{},
 		dead: map[string]string{}, refs: map[string]*corev1.ObjectReference{}}

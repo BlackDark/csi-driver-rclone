@@ -73,8 +73,19 @@ func TestNoCredentialsInPodSpec(t *testing.T) {
 			t.Error("config password in spec.json")
 		}
 	}
-	if len(c.Env) != 0 || len(c.EnvFrom) != 0 {
-		t.Errorf("unexpected env: %v %v", c.Env, c.EnvFrom)
+	for _, e := range c.Env {
+		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.FieldRef == nil {
+			t.Errorf("env %s is not a downward API field: %v", e.Name, e)
+		}
+	}
+	if len(c.EnvFrom) != 0 {
+		t.Errorf("unexpected envFrom: %v", c.EnvFrom)
+	}
+	if c.ReadinessProbe == nil || c.ReadinessProbe.HTTPGet.Path != "/healthz" || c.LivenessProbe != nil {
+		t.Errorf("want readiness /healthz only: %v %v", c.ReadinessProbe, c.LivenessProbe)
+	}
+	if len(c.Ports) != 1 || c.Ports[0].ContainerPort != MetricsPort {
+		t.Errorf("metrics port: %v", c.Ports)
 	}
 	if string(secret.Data[PasswordKey]) != password || !strings.Contains(string(secret.Data[SpecKey]), accessKey) {
 		t.Error("secret lacks spec or password")

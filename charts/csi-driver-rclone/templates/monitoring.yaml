@@ -1,0 +1,103 @@
+{{- $m := .Values.metrics -}}
+{{- $full := include "csi-driver-rclone.fullname" . -}}
+{{- $needCRD := or $m.serviceMonitor.enabled $m.podMonitor.enabled -}}
+{{- if and $needCRD (not (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1")) -}}
+{{- fail "metrics.serviceMonitor/podMonitor need the Prometheus Operator CRDs (monitoring.coreos.com/v1)" -}}
+{{- end -}}
+{{- if $m.enabled }}
+{{- range $component := list "node" "controller" }}
+---
+# Headless: Prometheus scrapes every pod behind it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-{{ $component }}-metrics
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "csi-driver-rclone.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+    rclone.csi.blackdark.github.io/metrics: "true"
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: csi-driver-rclone
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: {{ $component }}
+  ports:
+    - name: metrics
+      port: {{ $m.port }}
+      targetPort: metrics
+{{- end }}
+{{- if $m.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $full }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "csi-driver-rclone.labels" . | nindent 4 }}
+    {{- with $m.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      rclone.csi.blackdark.github.io/metrics: "true"
+  endpoints:
+    - port: metrics
+      interval: {{ $m.serviceMonitor.interval }}
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+          targetLabel: component
+{{- end }}
+{{- end }}
+{{- if $m.podMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ $full }}-mount
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "csi-driver-rclone.labels" . | nindent 4 }}
+    {{- with $m.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: csi-driver-rclone
+      app.kubernetes.io/component: mount
+  podMetricsEndpoints:
+    - port: metrics
+      interval: {{ $m.podMonitor.interval }}
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - targetLabel: component
+          replacement: mount
+{{- end }}
+{{- if $m.dashboard.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "csi-driver-rclone.labels" . | nindent 4 }}
+    {{- with $m.dashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $m.dashboard.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  csi-driver-rclone.json: |-
+    {{- .Files.Get "dashboards/csi-driver-rclone.json" | nindent 4 }}
+{{- end }}

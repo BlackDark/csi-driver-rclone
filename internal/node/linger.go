@@ -14,6 +14,7 @@ func (s *Server) startLinger(ctx context.Context, m *fuseMount, unlock func()) e
 	gen := m.lingerGen
 	s.bg.Add(1)
 	m.linger = s.deps.Clock.AfterFunc(s.cfg.Linger, func() { s.lingerExpired(m, gen) })
+	m.lingering.Store(true)
 	s.deps.Log.Info("mount unused, lingering", "id", m.id, "linger", s.cfg.Linger.String())
 	unlock()
 	return nil
@@ -23,6 +24,7 @@ func (s *Server) startLinger(ctx context.Context, m *fuseMount, unlock func()) e
 // Callers hold the <id> lock. A timer that already fired sees the bumped generation.
 func (s *Server) cancelLinger(m *fuseMount) {
 	m.lingerGen++
+	m.lingering.Store(false)
 	if m.linger == nil {
 		return
 	}
@@ -40,6 +42,7 @@ func (s *Server) lingerExpired(m *fuseMount, gen uint64) {
 		return
 	}
 	m.linger = nil
+	m.lingering.Store(false)
 	s.deps.Log.Info("linger expired, stopping mount pod", "id", m.id)
 	ctx, cancel := context.WithTimeout(context.Background(), kubeCallTimeout)
 	defer cancel()

@@ -56,12 +56,17 @@ spec:
             - controller
             - --endpoint=unix:///csi/csi.sock
             - --log-level={{ .Values.logLevel }}
+            - --metrics-addr={{ if .Values.metrics.enabled }}:{{ .Values.metrics.port }}{{ end }}
           securityContext: &restricted
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           ports:
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
             - name: healthz
               containerPort: {{ $port }}
           livenessProbe:

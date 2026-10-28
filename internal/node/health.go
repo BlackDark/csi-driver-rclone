@@ -116,6 +116,7 @@ func (s *Server) recoverMount(m *fuseMount, reason string) {
 		"(transport endpoint is not connected); restart the pod to remount it", m.name, m.volumeID, reason)
 	s.deps.Log.Warn("mount pod lost", "id", m.id, "pod", m.name, "reason", reason, "targets", len(targets))
 	refs := s.markDead(targets, msg)
+	s.deps.Metrics.lost.Inc()
 	s.emit(s.mountLostEvents(m, refs, msg))
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.teardownTimeout()+s.cfg.PublishTimeout+kubeCallTimeout)

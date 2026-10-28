@@ -18,6 +18,7 @@ run = [
   "go test ./...",
   "helm lint --strict charts/csi-driver-rclone",
   "helm template t charts/csi-driver-rclone > /dev/null",
+  "helm template t charts/csi-driver-rclone --api-versions monitoring.coreos.com/v1 --set metrics.serviceMonitor.enabled=true --set metrics.podMonitor.enabled=true --set metrics.dashboard.enabled=true > /dev/null",
 ]
 
 [tasks."test:fuse"]

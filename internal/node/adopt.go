@@ -116,6 +116,10 @@ func (s *Server) adoptMount(ctx context.Context, n nodeMount, unlock func()) {
 	m := s.newFuseMount(n.id)
 	close(m.ready)
 	m.podUID = n.pod.UID
+	if len(n.pod.Spec.Containers) > 0 {
+		m.image = n.pod.Spec.Containers[0].Image
+	}
+	s.deps.Metrics.adoptions.WithLabelValues(AdoptAdopted).Inc()
 	m.volumeID = n.pod.Annotations[mountpod.AnnotationVolID]
 	m.spec = s.loadSpec(ctx, n.id)
 	m.lastPod = s.restoreRefs(n.pod, n.targets)
@@ -140,6 +144,10 @@ func (s *Server) adoptMount(ctx context.Context, n nodeMount, unlock func()) {
 func (s *Server) cleanupMount(ctx context.Context, n nodeMount) {
 	kd := s.cfg.Pod.KubeletDir
 	name := mountpod.Name(n.id)
+	s.deps.Metrics.adoptions.WithLabelValues(AdoptCleaned).Inc()
+	if n.pod != nil {
+		s.deps.Metrics.lost.Inc()
+	}
 	s.deps.Log.Warn("cleaning up mount left by a plugin restart", "id", n.id,
 		"fuseMounted", n.fuse, "pod", n.pod != nil, "deadTargets", len(n.targets))
 	if n.fuse {

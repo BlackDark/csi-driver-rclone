@@ -88,6 +88,30 @@ mountPod:
   tolerations:
     - operator: Exists
 
+# Prometheus metrics (docs/reference/metrics.md). The endpoints are unauthenticated
+# plain HTTP inside the cluster; restrict them with a NetworkPolicy if needed.
+metrics:
+  # Node plugin and controller /metrics; Mount Pods always serve theirs on 9810.
+  enabled: true
+  port: 9809
+  # Prometheus Operator objects; need the monitoring.coreos.com/v1 CRDs.
+  # ServiceMonitor: node plugin and controller, through a headless metrics Service.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+  # PodMonitor: Mount Pods.
+  podMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+  # Grafana dashboard ConfigMap for the Grafana sidecar.
+  dashboard:
+    enabled: false
+    labels:
+      grafana_dashboard: "1"
+    annotations: {}
+
 sidecars:
   nodeDriverRegistrar:
     image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.14.0@sha256:5244abbe87e01b35adeb8bb13882a74785df0c0619f8325c9e950395c3f72a97

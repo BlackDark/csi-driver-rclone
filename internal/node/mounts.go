@@ -39,6 +39,8 @@ type fuseMount struct {
 	lost                 chan struct{} // closed when the Pod watch sees the Mount Pod stop unasked
 	lostOnce             sync.Once
 	releasing            atomic.Bool // set while the plugin itself stops the Mount Pod
+	lingering            atomic.Bool // a Linger is armed; read by metrics scrapes
+	image                string      // Mount Pod image, set before the mount is visible
 
 	// spec and volumeID let a lost Mount Pod be recreated; spec is nil when unknown.
 	spec     *mountspec.Spec
@@ -118,7 +120,7 @@ func (s *Server) newFuseMount(id string) *fuseMount {
 // startMount mounts fuse/ and serves its fd on handoff.sock.
 func (s *Server) startMount(id, volumeID string, spec mountspec.Spec) (*fuseMount, error) {
 	m := s.newFuseMount(id)
-	m.spec, m.volumeID = &spec, volumeID
+	m.spec, m.volumeID, m.image = &spec, volumeID, s.cfg.Pod.Image
 	if err := s.deps.PrepareDir(m.mountDir, int(s.cfg.Pod.UID), int(s.cfg.Pod.GID)); err != nil {
 		return nil, fmt.Errorf("prepare mount dir: %w", err)
 	}

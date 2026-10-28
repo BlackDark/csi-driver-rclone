@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/handoff"
+	"github.com/BlackDark/csi-driver-rclone/internal/metrics"
 	"github.com/BlackDark/csi-driver-rclone/internal/mountspec"
 	_ "github.com/rclone/rclone/backend/all" // every backend a Remote may use
 	_ "github.com/rclone/rclone/cmd/mount2"  // registers the mount2 MountFn
@@ -31,6 +33,9 @@ type Params struct {
 	ReconnectBackoff time.Duration
 	DrainPoll        time.Duration
 	Log              *slog.Logger
+	// MetricsAddr serves /metrics and /healthz; empty disables them. VolumeID labels the series.
+	MetricsAddr string
+	VolumeID    string
 }
 
 // Run serves the mount until ctx is cancelled (SIGTERM) or the mount goes away, then
@@ -43,6 +48,13 @@ func Run(ctx context.Context, p Params) error {
 	if err != nil {
 		return err
 	}
+	var ready atomic.Bool
+	col := newCollector(p.VolumeID, globalTransfers)
+	reg := metrics.NewRegistry()
+	reg.MustRegister(col)
+	mctx, stopMetrics := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopMetrics()
+	metrics.ServeBackground(mctx, p.MetricsAddr, metrics.Handler(reg, ready.Load), p.Log)
 	conn, err := handoff.Dial(ctx, p.SockPath)
 	if err != nil {
 		return err
@@ -58,14 +70,16 @@ func Run(ctx context.Context, p Params) error {
 		_ = conn.Close()
 		return err
 	}
+	col.setVFS(mp.VFS.Stats)
 	session := handoff.NewSession(p.SockPath, conn, p.ReconnectBackoff, p.Log)
 	defer func() { _ = session.Close() }()
 	if err := session.Send(handoff.MsgReady); err != nil {
 		return err
 	}
 	p.Log.Info("mount ready", "fs", p.Spec.Remote.FsPath, "identity", p.Spec.Identity)
+	ready.Store(true)
 	go session.Run(context.WithoutCancel(ctx))
-	return stop(ctx, p, mp, session)
+	return stop(ctx, p, mp, session, func() { ready.Store(false) })
 }
 
 func prepare(p Params) (Options, error) {
@@ -110,7 +124,8 @@ func mount(fsPath, mountpoint string, opts Options) (*mountlib.MountPoint, error
 
 // stop waits for SIGTERM or the end of serving, drains, reports, and waits briefly
 // for the plugin to unmount: rclone cannot unmount a /dev/fd/N mountpoint itself.
-func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *handoff.Session) error {
+// notReady runs once stopping starts.
+func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *handoff.Session, notReady func()) error {
 	var serveErr error
 	served := false
 	select {
@@ -120,6 +135,7 @@ func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *hando
 		served = true
 		p.Log.Warn("fuse server stopped before stop request", "err", serveErr)
 	}
+	notReady()
 	msg := handoff.MsgDrained
 	if !drain(context.Background(), mp.VFS.Stats, p.DrainTimeout, p.DrainPoll) {
 		msg = handoff.MsgDrainTimeout
