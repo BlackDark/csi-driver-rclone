@@ -1,5 +1,6 @@
 # Rulesets require one check only: `check`, the gate over every job below.
-# Tags arrive via release.yml calling this workflow (workflow_call), so no tag trigger here.
+# release.yml ships a tag only when this workflow's `check` passed for its commit on main,
+# so pushes to main always run everything; docs-only PRs skip fuse and e2e.
 name: CI
 
 on:
@@ -7,7 +8,6 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  workflow_call:
   workflow_dispatch:
 
 permissions: {}
@@ -17,6 +17,35 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # code=false only for a PR touching nothing but docs/** and *.md.
+  changes:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # the PR merge commit and its base parent
+      - id: diff
+        run: |
+          code=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            files=$(git diff --name-only HEAD^1 HEAD)
+            if [ -n "$files" ]; then
+              code=false
+              while IFS= read -r f; do
+                case "$f" in docs/* | *.md) ;; *) code=true ;; esac
+              done <<< "$files"
+            fi
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   test:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
@@ -46,7 +75,8 @@ jobs:
       - run: actionlint
 
   fuse:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -59,10 +89,11 @@ jobs:
       - run: mise run test:fuse
 
   e2e:
-    # PRs (non-draft), main, and release tags via workflow_call; not manual branch runs.
+    # PRs (non-draft, not docs-only) and main; not manual branch runs.
+    needs: changes
     if: >-
-      ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft)
-      || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+      ${{ needs.changes.outputs.code == 'true'
+      && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
@@ -89,7 +120,7 @@ jobs:
 
   check:
     if: always()
-    needs: [test, workflows, fuse, e2e]
+    needs: [changes, test, workflows, fuse, e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
