@@ -47,7 +47,7 @@ func requireInfoImage(ctx context.Context, t *testing.T, cs kubernetes.Interface
 	})
 }
 
-// Runs last (file order): it rolls the chart and restores it afterwards.
+// Serial, last in file order: it rolls the chart and restores it before the parallel tests resume.
 func TestUpgradeKeepsInUseMountPod(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
@@ -62,7 +62,7 @@ func TestUpgradeKeepsInUseMountPod(t *testing.T) {
 	pod := workload("e2e-upgrade", vol, ioLoop)
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "IO-OK 3")
-	mp := soleMountPod(ctx, t, cs)
+	mp := soleMountPod(ctx, t, cs, vol)
 	if got := mountImage(mp); got != oldImage {
 		t.Fatalf("Mount Pod image %s, want %s", got, oldImage)
 	}
@@ -75,7 +75,7 @@ func TestUpgradeKeepsInUseMountPod(t *testing.T) {
 		t.Fatalf("node plugin image %s, want %s", got, newImage)
 	}
 	ioContinues(ctx, t, cs, pod.Name, lastOK(podLog(ctx, t, cs, pod.Name)))
-	kept := soleMountPod(ctx, t, cs)
+	kept := soleMountPod(ctx, t, cs, vol)
 	if kept.UID != mp.UID || mountImage(kept) != oldImage {
 		t.Fatalf("in-use Mount Pod replaced by the upgrade: %s %s, want %s %s", kept.UID, mountImage(kept), mp.UID, oldImage)
 	}
@@ -86,19 +86,19 @@ func TestUpgradeKeepsInUseMountPod(t *testing.T) {
 	again := workload("e2e-upgrade-again", vol, ioLoop)
 	mustCreatePod(ctx, t, cs, again)
 	waitLogContains(ctx, t, cs, appNS, again.Name, "IO-OK 3")
-	if got := soleMountPod(ctx, t, cs); got.UID != mp.UID {
+	if got := soleMountPod(ctx, t, cs, vol); got.UID != mp.UID {
 		t.Fatalf("republish within the Linger replaced the Mount Pod: %s", got.UID)
 	}
 	t.Log("republish within the Linger reused the old-image Mount Pod")
 
 	deletePod(ctx, t, cs, again.Name)
 	poll(ctx, t, "old Mount Pod gone after the Linger", func() (bool, error) {
-		return countMount(ctx, t, cs) == 0, nil
+		return countMount(ctx, t, cs, vol) == 0, nil
 	})
 	fresh := workload("e2e-upgrade-fresh", vol, ioLoop)
 	mustCreatePod(ctx, t, cs, fresh)
 	waitLogContains(ctx, t, cs, appNS, fresh.Name, "IO-OK 3")
-	next := soleMountPod(ctx, t, cs)
+	next := soleMountPod(ctx, t, cs, vol)
 	if mountImage(next) != newImage {
 		t.Fatalf("new Mount Pod image %s, want %s", mountImage(next), newImage)
 	}
@@ -106,7 +106,7 @@ func TestUpgradeKeepsInUseMountPod(t *testing.T) {
 	t.Log("publish after the Linger started a Mount Pod on the new image")
 
 	deletePod(ctx, t, cs, fresh.Name)
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 }
 
 // requireDefaultResources: chart defaults (values.yaml mountPod.resources), no memory limit.

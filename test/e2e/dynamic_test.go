@@ -21,6 +21,7 @@ import (
 const dynClass = "e2e-rclone-dynamic"
 
 func TestDynamicVolumes(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	cs := client(t)
@@ -68,7 +69,9 @@ func TestDynamicVolumes(t *testing.T) {
 	t.Log("each PVC wrote to its own dir")
 
 	deletePod(ctx, t, cs, pod.Name)
-	poll(ctx, t, "Mount Pods gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pods gone", func() (bool, error) {
+		return countMount(ctx, t, cs, pvs[claims[0]])+countMount(ctx, t, cs, pvs[claims[1]]) == 0, nil
+	})
 	for _, c := range claims {
 		deleteClaim(ctx, t, cs, c)
 		poll(ctx, t, "PV "+pvs[c]+" gone", func() (bool, error) {

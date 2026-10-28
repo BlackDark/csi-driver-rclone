@@ -99,13 +99,14 @@ func TestNodePluginRestartKeepsMounts(t *testing.T) {
 	defer cancel()
 	cs := client(t)
 	setupNamespace(ctx, t, cs)
-	createVolume(ctx, t, cs, staticPV("e2e-restart", map[string]string{
+	vol := "e2e-restart"
+	createVolume(ctx, t, cs, staticPV(vol, map[string]string{
 		"remote": "minio", "remotePath": "e2e-bucket/restart", "vfs-cache-mode": "writes",
 	}))
 	pod := workload("e2e-restart", "e2e-restart", ioLoop)
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "IO-OK 3")
-	mp := soleMountPod(ctx, t, cs).UID
+	mp := soleMountPod(ctx, t, cs, vol).UID
 
 	plugin := nodePlugin(ctx, t, cs)
 	if err := cs.CoreV1().Pods(driverNS()).Delete(ctx, plugin.Name, metav1.DeleteOptions{}); err != nil {
@@ -124,14 +125,14 @@ func TestNodePluginRestartKeepsMounts(t *testing.T) {
 	}
 	replaced(ctx, t, cs, plugin.UID)
 	ioContinues(ctx, t, cs, pod.Name, lastOK(podLog(ctx, t, cs, pod.Name)))
-	if got := soleMountPod(ctx, t, cs).UID; got != mp {
+	if got := soleMountPod(ctx, t, cs, vol).UID; got != mp {
 		t.Fatalf("Mount Pod replaced across restarts: %s, want %s", got, mp)
 	}
 	t.Log("IO continued across a DaemonSet rollout; same Mount Pod adopted")
 
 	deletePod(ctx, t, cs, pod.Name)
 	poll(ctx, t, "adopted Mount Pod gone after the Linger", func() (bool, error) {
-		return countMount(ctx, t, cs) == 0, nil
+		return countMount(ctx, t, cs, vol) == 0, nil
 	})
 	t.Log("unpublish after restart released the adopted Mount Pod")
 }
@@ -180,13 +181,14 @@ func TestMountPodCrash(t *testing.T) {
 	defer cancel()
 	cs := client(t)
 	setupNamespace(ctx, t, cs)
-	createVolume(ctx, t, cs, staticPV("e2e-crash", map[string]string{
+	vol := "e2e-crash"
+	createVolume(ctx, t, cs, staticPV(vol, map[string]string{
 		"remote": "minio", "remotePath": "e2e-bucket/crash", "vfs-cache-mode": "writes",
 	}))
 	pod := workload("e2e-crash", "e2e-crash", ioLoop)
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "IO-OK 3")
-	old := soleMountPod(ctx, t, cs)
+	old := soleMountPod(ctx, t, cs, vol)
 
 	killRclone(ctx, t, cs, old.Spec.NodeName)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "IO-FAIL")
@@ -231,7 +233,7 @@ func TestMountPodCrash(t *testing.T) {
 	}
 	t.Log("restarted pod works through the recreated Mount Pod")
 	deletePod(ctx, t, cs, again.Name)
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 }
 
 // After a plugin restart the adopted Mount Pod still knows its Mount Spec (owned
@@ -242,13 +244,14 @@ func TestAdoptedMountPodCrash(t *testing.T) {
 	defer cancel()
 	cs := client(t)
 	setupNamespace(ctx, t, cs)
-	createVolume(ctx, t, cs, staticPV("e2e-adoptcrash", map[string]string{
+	vol := "e2e-adoptcrash"
+	createVolume(ctx, t, cs, staticPV(vol, map[string]string{
 		"remote": "minio", "remotePath": "e2e-bucket/adoptcrash", "vfs-cache-mode": "writes",
 	}))
 	pod := workload("e2e-adoptcrash", "e2e-adoptcrash", ioLoop)
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "IO-OK 3")
-	old := soleMountPod(ctx, t, cs)
+	old := soleMountPod(ctx, t, cs, vol)
 
 	plugin := nodePlugin(ctx, t, cs)
 	if err := cs.CoreV1().Pods(driverNS()).Delete(ctx, plugin.Name, metav1.DeleteOptions{}); err != nil {
@@ -267,5 +270,5 @@ func TestAdoptedMountPodCrash(t *testing.T) {
 	})
 	t.Log("adopted Mount Pod crash: recreated at once, workload pod notified")
 	deletePod(ctx, t, cs, pod.Name)
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 }

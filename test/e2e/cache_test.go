@@ -35,6 +35,7 @@ func cacheFiles(t *testing.T, volumeID, name string) string {
 }
 
 func TestCacheSurvivesMountPodReplacement(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	cs := client(t)
@@ -47,10 +48,10 @@ func TestCacheSurvivesMountPodReplacement(t *testing.T) {
 	pod := workload("e2e-cache", vol, fmt.Sprintf("echo %s > /data/cached.txt && cat /data/cached.txt && sleep 3600", marker))
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, marker)
-	first := soleMountPod(ctx, t, cs)
+	first := soleMountPod(ctx, t, cs, vol)
 
 	deletePod(ctx, t, cs, pod.Name)
-	poll(ctx, t, "Mount Pod gone after the Linger", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone after the Linger", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 	if f := cacheFiles(t, vol, "cached.txt"); f == "" {
 		t.Fatal("cached file not in the hostPath Cache after the Mount Pod stopped")
 	}
@@ -58,7 +59,7 @@ func TestCacheSurvivesMountPodReplacement(t *testing.T) {
 	again := workload("e2e-cache", vol, "cat /data/cached.txt && sleep 3600")
 	mustCreatePod(ctx, t, cs, again)
 	waitLogContains(ctx, t, cs, appNS, again.Name, marker)
-	if second := soleMountPod(ctx, t, cs); second.UID == first.UID {
+	if second := soleMountPod(ctx, t, cs, vol); second.UID == first.UID {
 		t.Fatal("Mount Pod was not replaced")
 	}
 	f := cacheFiles(t, vol, "cached.txt")
@@ -67,10 +68,11 @@ func TestCacheSurvivesMountPodReplacement(t *testing.T) {
 	}
 	t.Logf("cache file kept across Mount Pod replacement: %s", f)
 	deletePod(ctx, t, cs, again.Name)
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 }
 
 func TestCacheVolumeSource(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	cs := client(t)
@@ -83,7 +85,7 @@ func TestCacheVolumeSource(t *testing.T) {
 	pod := workload("e2e-cachevol", vol, "echo ok > /data/x.txt && cat /data/x.txt && sleep 3600")
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "ok")
-	mp := soleMountPod(ctx, t, cs)
+	mp := soleMountPod(ctx, t, cs, vol)
 	found := false
 	for _, v := range mp.Spec.Volumes {
 		if v.Name == "cache" {
@@ -95,5 +97,5 @@ func TestCacheVolumeSource(t *testing.T) {
 	}
 	t.Log("cacheVolume emptyDir rendered and mounted")
 	deletePod(ctx, t, cs, pod.Name)
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 }

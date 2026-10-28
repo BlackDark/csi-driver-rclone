@@ -17,6 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
+
+	"github.com/BlackDark/csi-driver-rclone/internal/mountpod"
 )
 
 func setupNamespace(ctx context.Context, t *testing.T, cs kubernetes.Interface) {
@@ -134,14 +136,21 @@ func waitLogContains(ctx context.Context, t *testing.T, cs kubernetes.Interface,
 	})
 }
 
-// countMount is the number of Mount Pods plus owned Secrets in the driver namespace.
-func countMount(ctx context.Context, t *testing.T, cs kubernetes.Interface) int {
+// volumeSel selects the Mount Pods and owned Secrets of one volume, so tests on
+// other volumes can run in parallel.
+func volumeSel(volumeID string) string {
+	return mountSel + "," + mountpod.LabelVolume + "=" + mountpod.CacheKey(volumeID)
+}
+
+// countMount is the number of Mount Pods plus owned Secrets of volumeID.
+func countMount(ctx context.Context, t *testing.T, cs kubernetes.Interface, volumeID string) int {
 	t.Helper()
-	pods, err := cs.CoreV1().Pods(driverNS()).List(ctx, metav1.ListOptions{LabelSelector: mountSel})
+	sel := metav1.ListOptions{LabelSelector: volumeSel(volumeID)}
+	pods, err := cs.CoreV1().Pods(driverNS()).List(ctx, sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secs, err := cs.CoreV1().Secrets(driverNS()).List(ctx, metav1.ListOptions{LabelSelector: mountSel})
+	secs, err := cs.CoreV1().Secrets(driverNS()).List(ctx, sel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +201,7 @@ func runMC(ctx context.Context, cs kubernetes.Interface, args ...string) (string
 
 func poll(ctx context.Context, t *testing.T, what string, f func() (bool, error)) {
 	t.Helper()
-	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 3*time.Minute, true, func(context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, 3*time.Minute, true, func(context.Context) (bool, error) {
 		return f()
 	})
 	if err != nil {

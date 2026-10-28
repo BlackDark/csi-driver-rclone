@@ -18,11 +18,13 @@ import (
 // The chart is installed with mountPod.linger=20s (hack/e2e/up.sh).
 
 func TestSharedMountPodReadOnlyAndLinger(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	cs := client(t)
 	setupNamespace(ctx, t, cs)
-	createVolume(ctx, t, cs, staticPV("e2e-shared", map[string]string{
+	vol := "e2e-shared"
+	createVolume(ctx, t, cs, staticPV(vol, map[string]string{
 		"remote": "minio", "remotePath": "e2e-bucket/shared", "vfs-cache-mode": "writes",
 	}))
 
@@ -44,7 +46,7 @@ func TestSharedMountPodReadOnlyAndLinger(t *testing.T) {
 	waitLogContains(ctx, t, cs, appNS, ro.Name, "Read-only file system")
 	t.Log("read-only pod reads its subPath and gets EROFS on write")
 
-	uid := soleMountPod(ctx, t, cs).UID
+	uid := soleMountPod(ctx, t, cs, vol).UID
 	t.Logf("both pods share Mount Pod %s", uid)
 
 	deletePod(ctx, t, cs, rw.Name)
@@ -52,24 +54,26 @@ func TestSharedMountPodReadOnlyAndLinger(t *testing.T) {
 	again := workload("e2e-shared-again", "e2e-shared", "cat /data/rw/f.txt && echo AGAIN && sleep 3600")
 	mustCreatePod(ctx, t, cs, again)
 	waitLogContains(ctx, t, cs, appNS, again.Name, "AGAIN")
-	if got := soleMountPod(ctx, t, cs).UID; got != uid {
+	if got := soleMountPod(ctx, t, cs, vol).UID; got != uid {
 		t.Fatalf("republish within the Linger made a new Mount Pod: %s, want %s", got, uid)
 	}
 	t.Log("republish within the Linger reused the Mount Pod")
 
 	deletePod(ctx, t, cs, again.Name)
 	poll(ctx, t, "Mount Pod gone after the Linger", func() (bool, error) {
-		return countMount(ctx, t, cs) == 0, nil
+		return countMount(ctx, t, cs, vol) == 0, nil
 	})
 }
 
 func TestWriteBackDrainedOnStop(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	cs := client(t)
 	setupNamespace(ctx, t, cs)
 	// Write-back outlasts the Linger, so the upload is still queued at SIGTERM.
-	createVolume(ctx, t, cs, staticPV("e2e-writeback", map[string]string{
+	vol := "e2e-writeback"
+	createVolume(ctx, t, cs, staticPV(vol, map[string]string{
 		"remote": "minio", "remotePath": "e2e-bucket/wb", "vfs-cache-mode": "writes", "vfs-write-back": "60s",
 	}))
 	marker := fmt.Sprintf("wb-%d", time.Now().UnixNano())
@@ -80,7 +84,7 @@ func TestWriteBackDrainedOnStop(t *testing.T) {
 	deletePod(ctx, t, cs, pod.Name)
 
 	poll(ctx, t, "Mount Pod terminating after the Linger", func() (bool, error) {
-		return soleMountPod(ctx, t, cs).DeletionTimestamp != nil, nil
+		return soleMountPod(ctx, t, cs, vol).DeletionTimestamp != nil, nil
 	})
 	out, _ := runMC(ctx, cs, "ls", "e2e/e2e-bucket/wb/")
 	if strings.Contains(out, file) {
@@ -89,7 +93,7 @@ func TestWriteBackDrainedOnStop(t *testing.T) {
 	t.Log("upload still queued when the Mount Pod got SIGTERM")
 
 	poll(ctx, t, "Mount Pod gone", func() (bool, error) {
-		return countMount(ctx, t, cs) == 0, nil
+		return countMount(ctx, t, cs, vol) == 0, nil
 	})
 	out, err := runMC(ctx, cs, "cat", "e2e/e2e-bucket/wb/"+file)
 	if err != nil || !strings.Contains(out, marker) {
@@ -98,10 +102,10 @@ func TestWriteBackDrainedOnStop(t *testing.T) {
 	t.Log("write-back upload drained to MinIO before the Mount Pod exited")
 }
 
-// soleMountPod fails unless exactly one Mount Pod exists.
-func soleMountPod(ctx context.Context, t *testing.T, cs kubernetes.Interface) corev1.Pod {
+// soleMountPod fails unless volumeID has exactly one Mount Pod.
+func soleMountPod(ctx context.Context, t *testing.T, cs kubernetes.Interface, volumeID string) corev1.Pod {
 	t.Helper()
-	pods, err := cs.CoreV1().Pods(driverNS()).List(ctx, metav1.ListOptions{LabelSelector: mountSel})
+	pods, err := cs.CoreV1().Pods(driverNS()).List(ctx, metav1.ListOptions{LabelSelector: volumeSel(volumeID)})
 	if err != nil {
 		t.Fatal(err)
 	}

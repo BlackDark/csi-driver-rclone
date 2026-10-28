@@ -48,7 +48,7 @@ func TestHealWorkloadAfterMountPodCrash(t *testing.T) {
 
 	first := depPod(ctx, t, cs, "")
 	waitLogContains(ctx, t, cs, appNS, first.Name, "IO-OK 3")
-	old := soleMountPod(ctx, t, cs)
+	old := soleMountPod(ctx, t, cs, "e2e-heal")
 
 	killRclone(ctx, t, cs, old.Spec.NodeName)
 	poll(ctx, t, "WorkloadHealed Event on the evicted pod", func() (bool, error) {
@@ -68,7 +68,7 @@ func TestHealWorkloadAfterMountPodCrash(t *testing.T) {
 		l, err := cs.CoreV1().Pods(appNS).List(ctx, metav1.ListOptions{LabelSelector: "app=e2e-heal"})
 		return err == nil && len(l.Items) == 0, nil
 	})
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, "e2e-heal") == 0, nil })
 }
 
 // depPod waits for the running e2e-heal pod whose UID is not skip.

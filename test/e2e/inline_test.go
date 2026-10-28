@@ -13,6 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
+
+	"github.com/BlackDark/csi-driver-rclone/internal/mountpod"
 )
 
 func inlinePod(name string, attrs map[string]string, script string) *corev1.Pod {
@@ -54,6 +56,7 @@ func failedMount(ctx context.Context, t *testing.T, cs kubernetes.Interface, pod
 }
 
 func TestInlineVolume(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	cs := client(t)
@@ -65,14 +68,41 @@ func TestInlineVolume(t *testing.T) {
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, marker)
 	t.Log("inline volume mounted with the pod-namespace Credential Secret")
+	vol := inlineVolumeID(ctx, t, cs, pod.Name)
 	poll(ctx, t, "object in MinIO", func() (bool, error) {
 		out, err := runMC(ctx, cs, "cat", "e2e/e2e-bucket/inline/marker.txt")
 		return strings.Contains(out, marker), err
 	})
 	deletePod(ctx, t, cs, pod.Name)
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 }
 
+// inlineVolumeID is the volume ID kubelet chose for workload's inline volume, read off
+// the Mount Pod whose users annotation names the workload pod's UID.
+func inlineVolumeID(ctx context.Context, t *testing.T, cs kubernetes.Interface, workload string) string {
+	t.Helper()
+	w, err := cs.CoreV1().Pods(appNS).Get(ctx, workload, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	poll(ctx, t, "Mount Pod of "+workload, func() (bool, error) {
+		l, err := cs.CoreV1().Pods(driverNS()).List(ctx, metav1.ListOptions{LabelSelector: mountSel})
+		if err != nil {
+			return false, err
+		}
+		for _, p := range l.Items {
+			if strings.Contains(p.Annotations[mountpod.AnnotationUsers], string(w.UID)) {
+				id = p.Annotations[mountpod.AnnotationVolID]
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	return id
+}
+
+// Serial: it asserts that no Mount Pod exists at all.
 func TestInlineVolumeRejectsAdminOptions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
@@ -92,7 +122,11 @@ func TestInlineVolumeRejectsAdminOptions(t *testing.T) {
 		failedMount(ctx, t, cs, pod.Name, "InvalidArgument", fmt.Sprintf("%q", key), "not allowed for inline volumes")
 		deletePod(ctx, t, cs, pod.Name)
 	}
-	if n := countMount(ctx, t, cs); n != 0 {
+	l, err := cs.CoreV1().Pods(driverNS()).List(ctx, metav1.ListOptions{LabelSelector: mountSel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(l.Items); n != 0 {
 		t.Fatalf("rejected inline volumes started %d Mount Pods", n)
 	}
 }
