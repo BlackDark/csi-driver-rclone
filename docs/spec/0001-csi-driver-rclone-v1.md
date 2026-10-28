@@ -60,7 +60,7 @@ A Kubernetes CSI driver, `rclone.csi.blackdark.github.io`, that mounts any rclon
 16. As an operator, I want a running Mount Pod to keep its image until it is replaced (on node reboot, drain, or reuse after the Linger expires), so that upgrades never restart a live mount.
 17. As an operator, I want a metric showing the version each Mount Pod runs, so that I can see which mounts still use an old image.
 18. As an operator, I want a crashed Mount Pod to be recreated, and new publishes to be blocked until it is ready, so that a mount failure is visible and recovers.
-19. As an operator, I want a stale mount ("transport endpoint is not connected") detected and reported as CSI volume health `INACCESSIBLE` (CSI 1.13's successor of `VOLUME_CONDITION`), so that I can act on it.
+19. As an operator, I want a stale mount ("transport endpoint is not connected") detected and reported as CSI volume health `INACCESSIBLE` through `NodeGetVolumeHealth` (capability `GET_VOLUME_HEALTH`, ADR 0003), so that I can act on it.
 20. As an operator, I want publish to be idempotent, so that kubelet retries never double-mount.
 21. As an operator, I want publish bounded by a timeout, with any orphaned in-flight mount cleaned up, so that a hung remote never wedges the node plugin.
 
@@ -123,7 +123,7 @@ A Kubernetes CSI driver, `rclone.csi.blackdark.github.io`, that mounts any rclon
 
 59. As an operator, I want a Helm chart published as an OCI chart on GHCR, so that I install with one command.
 60. As an operator, I want multi-arch images (amd64, arm64) on GHCR, so that it runs on mixed clusters.
-61. As an operator, I want Kubernetes ≥1.29 on Linux as the documented baseline, so that I know what is supported.
+61. As an operator, I want Kubernetes ≥1.34 on Linux as the documented baseline, so that I know what is supported. (≥1.34 because the bundled external-provisioner v6 needs the `storage/v1` VolumeAttributesClass API.)
 62. As an operator, I want the docs to state clearly what is possible and what is not, so that I can judge fit before installing.
 63. As an operator, I want a migration guide from a host systemd `rclone mount` with a hostPath PV, so that I can move my media stack.
 64. As a contributor, I want `mise run check` to run gofmt, go vet, golangci-lint and go test, so that one command verifies everything.
@@ -135,7 +135,7 @@ A Kubernetes CSI driver, `rclone.csi.blackdark.github.io`, that mounts any rclon
 ### Components
 
 - **One binary with three modes**: `node`, `controller` and `mount`. One image.
-- **Node plugin** (DaemonSet). Implements Identity and Node: `NodePublishVolume`, `NodeUnpublishVolume`, `NodeGetCapabilities`, `NodeGetInfo`, `NodeGetVolumeStats` and `NodeGetVolumeHealth`. Capabilities: `GET_VOLUME_HEALTH` (`NodeGetVolumeHealth`, which replaced `VOLUME_CONDITION` in CSI 1.13) and `GET_VOLUME_STATS`, nothing else.
+- **Node plugin** (DaemonSet). Implements Identity and Node: `NodePublishVolume`, `NodeUnpublishVolume`, `NodeGetCapabilities`, `NodeGetInfo`, `NodeGetVolumeStats` and `NodeGetVolumeHealth`. Capabilities: `GET_VOLUME_HEALTH` (`NodeGetVolumeHealth`, ADR 0003) and `GET_VOLUME_STATS`, nothing else.
   - No `STAGE_UNSTAGE` in v1. Sharing is done through the Mount Pod, not through kubelet staging.
   - Responsibilities: resolve the Mount Spec, ensure the Mount Pod for (volume, node), wait until it is ready, bind-mount its mount (with an optional read-only remount) into the target path, and track users so the Linger can start.
   - Privileged, with Bidirectional propagation on the kubelet dir and no hostNetwork.
@@ -179,7 +179,7 @@ Allowlist (generic flags only):
 - The Cache is a hostPath subdirectory per volume ID under a configurable root, unless `cacheVolume` is set.
 - Users are tracked from the target paths found on the node at publish and unpublish time. They are reconstructed from mount table and kubelet dirs after a plugin restart. There is no persisted state.
 - The Linger timer runs in the node plugin. It is reset on publish, and when it expires the plugin deletes the Mount Pod. The plugin's termination grace period covers the drain timeout.
-- Upgrades: Mount Pods carry an image label. The node plugin never replaces a ready Mount Pod that is in use.
+- Upgrades: the node plugin reads a Mount Pod's image from its pod spec (it is not part of the Mount Spec Identity) and never replaces a ready Mount Pod that is in use.
 
 ### Privilege spike (first ticket, blocking)
 
@@ -232,13 +232,13 @@ Find out whether the node plugin can open `/dev/fuse`, perform the FUSE mount, a
 - Cross-node cache consistency.
 - Capacity, quotas, snapshots, cloning and expansion.
 - mergerfs and composing with other drivers (to be designed in `csi-driver-mergerfs`).
-- Windows nodes, and Kubernetes < 1.29.
+- Windows nodes, and Kubernetes < 1.34 (external-provisioner v6 needs `storage/v1` VolumeAttributesClass).
 - Kustomize manifests.
 
 ## Further Notes
 
 - Media stack migration example: one Static Volume `media` with `ReadWriteMany`.
-  - The Credential Secret holds `configData` (crypt over OneDrive, with `chunk_size = 5M` and `delta = true` in the OneDrive section) and `configPassword`.
+  - The Credential Secret holds `configData` (crypt over OneDrive, with `chunk_size = 5M` and `delta = true` in the OneDrive section), plain or rclone-encrypted, and `configPassword`. Guide: [migrate from systemd](../guides/migrate-from-systemd.md).
   - Mount Options taken from the current systemd unit: `vfs-cache-mode: full`, `vfs-cache-max-size: 70G`, `vfs-cache-min-free-space: 15G`, `vfs-cache-max-age: 24h`, `vfs-write-back: 5m`, `vfs-read-ahead: 128M`, `buffer-size: 64M`, `dir-cache-time: 5000h`, `poll-interval: 10s`, `tpslimit: 8`, `tpslimit-burst: 8`, `bwlimit-file: 25M:off`, `transfers: 1`, `retries: 10`, `low-level-retries: 20`, `timeout: 1h`, `contimeout: 60s`, `uid: 1000`, `gid: 1000`, `umask: 002`, `user-agent: MediaArr`.
   - The move job becomes a CronJob. Polling replaces `vfs/refresh`.
 - The config password from the systemd units was shared in plain text during planning and must be rotated.

@@ -1,6 +1,6 @@
 # 06: Mount survival and health
 
-**What to build:** Restarting or upgrading the node plugin leaves every running mount working. After a restart the plugin rebuilds its view of the users of each Mount Pod from the node, with no persisted state. Stale mounts are detected and reported as volume health `INACCESSIBLE` (`NodeGetVolumeHealth`, CSI 1.13's successor of `VOLUME_CONDITION`). Publish is idempotent and bounded by a timeout, and any orphan cleaned up.
+**What to build:** Restarting or upgrading the node plugin leaves every running mount working. After a restart the plugin rebuilds its view of the users of each Mount Pod from the node, with no persisted state. Stale mounts are detected and reported as volume health `INACCESSIBLE` (`NodeGetVolumeHealth`, capability `GET_VOLUME_HEALTH`; ADR 0003). Publish is idempotent and bounded by a timeout, and any orphan cleaned up.
 
 **Blocked by:** 05
 

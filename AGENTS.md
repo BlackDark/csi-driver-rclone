@@ -1,6 +1,6 @@
 # csi-driver-rclone
 
-Kubernetes CSI driver mounting rclone remotes as volumes, for cluster operators. Pre-alpha.
+Kubernetes CSI driver mounting rclone remotes as volumes, for cluster operators. Pre-alpha. Baseline: Linux, Kubernetes ≥1.34 (external-provisioner v6 needs `storage/v1` VolumeAttributesClass; chart `kubeVersion`).
 
 ## Verify
 
