@@ -30,7 +30,9 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -C "$root" -trimpath \
 docker build -t "$IMAGE" --build-arg BIN=local --build-arg VERSION=e2e "$root"
 # Second tag for the upgrade e2e (test/e2e/upgrade_test.go): it compares image refs only.
 docker tag "$IMAGE" "${IMAGE}-v2"
-kind load docker-image --name "$CLUSTER" "$IMAGE" "${IMAGE}-v2"
+CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -C "$root" -trimpath -o bin/fakeoauth/fakeoauth ./test/fakeoauth/cmd/fakeoauth
+docker build -t fakeoauth:e2e -f "$here/fakeoauth/Dockerfile" "$root/bin/fakeoauth"
+kind load docker-image --name "$CLUSTER" "$IMAGE" "${IMAGE}-v2" fakeoauth:e2e
 
 for p in "${pulls[@]}"; do wait "$p"; done
 
@@ -43,5 +45,8 @@ helm upgrade --install csi-rclone "$chart" -n "$DRIVER_NS" \
   --set-string "controller.podAnnotations.e2e/build=$(date +%s)" \
   --wait --timeout 3m
 
+kubectl apply -f "$here/fakeoauth.yaml"
+kubectl -n fakeoauth rollout restart deploy/fakeoauth # picks up a rebuilt image
+kubectl -n fakeoauth rollout status deploy/fakeoauth --timeout 3m
 kubectl -n minio rollout status deploy/minio --timeout 3m
 kubectl -n minio wait --for=condition=complete job/make-bucket --timeout 3m

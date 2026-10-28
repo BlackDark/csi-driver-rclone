@@ -20,7 +20,7 @@ How the node plugin and a Mount Pod work together. Background: [ADR 0001](../adr
 
 ## spec.json
 
-`mountspec.File`, written by `Spec.Serialize` and read by `mountspec.Load`: `{"version":2,"configData":…,"fsPath":…,"options":{…},"identity":…,"unrestricted":…,"resources":{…},"cacheVolume":…,"ephemeral":…}`. It holds every Mount Spec field except the config password (not needed after decryption) and the per-publish read-only flag; the last four are omitted when empty. Version 1 files (without them) still load. The Mount Pod uses the remote and options; the node plugin reads the whole file back when it adopts a mount. `options` keeps Mount Spec keys (`vfs-cache-mode`); the Mount Pod maps them onto rclone's mount, VFS and global options and rejects unknown ones. rclone config stays in memory, never on disk.
+`mountspec.File`, written by `Spec.Serialize` and read by `mountspec.Load`: `{"version":2,"configData":…,"fsPath":…,"options":{…},"identity":…,"unrestricted":…,"resources":{…},"cacheVolume":…,"ephemeral":…,"tokens":[{"section":…,"isolated":…,"seedHash":…}]}`. It holds every Mount Spec field except the config password (not needed after decryption) and the per-publish read-only flag; the last five are omitted when empty. `tokens` lists the Token Write-back sections (ADR 0004); `configData` there already carries the token from the Token Secret. Version 1 files (without them) still load. The Mount Pod uses the remote and options; the node plugin reads the whole file back when it adopts a mount. `options` keeps Mount Spec keys (`vfs-cache-mode`); the Mount Pod maps them onto rclone's mount, VFS and global options and rejects unknown ones. rclone config stays in memory, never on disk.
 
 ## Handoff protocol
 
@@ -33,7 +33,7 @@ Package `internal/handoff`. One ASCII message per line on the unix socket; the s
 | `hello` | adopt | `reject mount-exists`, close |
 | `adopt` | fresh | `reject no-mount`, close |
 
-After the handshake the client sends `ready`, `drained` or `drain-timeout`; the server sends nothing more. EOF on either side ends the connection. After a lost connection the Mount Pod redials every second, sends `adopt`, and repeats its drain result if it already had one.
+After the handshake the client sends `ready`, `drained` or `drain-timeout`. For Token Write-back (ADR 0004) it also sends `token-subscribe`, `token-lock <s>`, `token-unlock <s>` and `token-save <s> <t>`; the server answers `token-grant <s> <t>` or `token-deny <s>`, answers every `token-save` with `token-saved <s> <sha256 of t>` once the save is settled (the Token Secret holds that token or a later-expiring one), or `token-save-failed <s>` (the Mount Pod keeps the token and resends), and pushes `token <s> <t>` after a subscribe. `<s>` and `<t>` are base64 of the section name in the user's `configData` and of the token JSON; lines after the handshake may be up to 64KiB. Lock waits run beside status messages, never blocking them. A closed connection releases its locks. EOF on either side ends the connection. After a lost connection the Mount Pod redials every second, sends `adopt`, and repeats its drain result if it already had one.
 
 ## Sequence
 

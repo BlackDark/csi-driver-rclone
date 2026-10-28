@@ -15,13 +15,14 @@ What the driver does, what it does not do, and why. Terms are defined in [GLOSSA
 - The Cache survives Mount Pod replacement. It lives on hostPath by default, one dir per volume, or on any volume source set in `cacheVolume`. A changed Mount Spec waits until the Mount Pod of the old spec is released, so two rclone processes never share a Cache.
 - Inline Volumes are per pod: each gets its own Mount Pod and Cache, never shared, and the Cache is removed with the Mount Pod.
 - The upload queue drains before a Mount Pod stops, bounded by a timeout. A timed-out drain emits a `DrainTimeout` Event on the Mount Pod and the last workload pod.
+- OAuth backends with rotating or single-use refresh tokens (Box, OneDrive): refreshed tokens are written back to a driver-owned Token Secret, and one refresher at a time holds a Lease, across nodes and volumes (ADR 0004). The Credential Secret in git keeps the initial token.
 - Prometheus metrics: CSI operations, per-volume VFS and transfer stats, and mount health (also reported through CSI `NodeGetVolumeHealth`, capability `GET_VOLUME_HEALTH`). ServiceMonitor, PodMonitor and Grafana dashboard are optional.
 
 ## Security posture
 
 - The node plugin is the only privileged component, because it needs Bidirectional propagation for bind mounts. It does not use hostNetwork.
 - The controller runs unprivileged and non-root, with a read-only root filesystem, no hostPath and no Secret access. The Mount Pod is unprivileged and non-root: the node plugin does the FUSE mount and passes the fd (ADR 0002). Images are distroless and non-root.
-- RBAC: pods and Secrets only in the driver namespace (pods also `patch`, for the users annotation). No cluster-wide Secret access. Events cluster-wide (create, patch), so drain timeouts show on the workload pod. With `mountPod.healWorkloads.enabled` only: cluster-wide pods `get` and `pods/eviction` `create`. The controller has only what external-provisioner needs: PVs, PVCs, StorageClasses, Events, and leases in the driver namespace.
+- RBAC: pods and Secrets only in the driver namespace (pods also `patch`, for the users annotation; Secrets also `update`, for Token Secrets), and leases `get`, `create`, `update` there for the token refresh Lease. No cluster-wide Secret access. Events cluster-wide (create, patch), so drain timeouts show on the workload pod. With `mountPod.healWorkloads.enabled` only: cluster-wide pods `get` and `pods/eviction` `create`. The controller has only what external-provisioner needs: PVs, PVCs, StorageClasses, Events, and leases in the driver namespace.
 - Metrics endpoints (node plugin, controller, Mount Pods) are unauthenticated plain HTTP on the pod network, with no rc server and no rc credentials. Labels carry volume IDs, Mount Pod ids and images, never credentials, remote paths or Mount Options ([metrics](reference/metrics.md)).
 - Mount Pods run at `system-node-critical` priority, so the apps using them are evicted first. They tolerate what the node plugin tolerates. Resources are set per StorageClass or PV over chart defaults: a 64Mi request and no memory limit ([operations](operations.md)).
 

@@ -23,6 +23,7 @@ type File struct {
 	Resources    *Resources        `json:"resources,omitempty"`
 	CacheVolume  string            `json:"cacheVolume,omitempty"`
 	Ephemeral    bool              `json:"ephemeral,omitempty"`
+	Tokens       []TokenSection    `json:"tokens,omitempty"`
 }
 
 // Serialize renders spec.json for s, without the config password. ReadOnly is per
@@ -37,6 +38,7 @@ func (s Spec) Serialize() ([]byte, error) {
 		Unrestricted: s.Unrestricted,
 		CacheVolume:  s.CacheVolume,
 		Ephemeral:    s.Mode == Ephemeral,
+		Tokens:       s.Tokens,
 	}
 	if s.Resources != (Resources{}) {
 		f.Resources = &s.Resources
@@ -63,6 +65,7 @@ func Load(data []byte) (Spec, error) {
 		Identity:     f.Identity,
 		Unrestricted: f.Unrestricted,
 		CacheVolume:  f.CacheVolume,
+		Tokens:       f.Tokens,
 	}
 	if f.Resources != nil {
 		s.Resources = *f.Resources

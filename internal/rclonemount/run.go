@@ -23,6 +23,10 @@ import (
 	"github.com/rclone/rclone/lib/atexit"
 )
 
+// tokenSaveWait bounds waiting for token-saved on stop; it stays inside the Mount
+// Pod's grace period, which only counts drain timeout and unmount wait plus 10s.
+const tokenSaveWait = 8 * time.Second
+
 // Params configure Run. Durations of zero are invalid.
 type Params struct {
 	Spec             mountspec.Spec
@@ -48,6 +52,11 @@ func Run(ctx context.Context, p Params) error {
 	if err != nil {
 		return err
 	}
+	var hook *tokenHook
+	if len(p.Spec.Tokens) > 0 {
+		hook = newTokenHook(p.Spec.Tokens, p.Log)
+		hook.install()
+	}
 	var ready atomic.Bool
 	col := newCollector(p.VolumeID, globalTransfers)
 	reg := metrics.NewRegistry()
@@ -65,21 +74,40 @@ func Run(ctx context.Context, p Params) error {
 		return err
 	}
 	p.Log.Info("received fuse fd", "fd", fd)
+	// The session runs before the mount: opening the remote may already need the token lock.
+	session := handoff.NewSession(p.SockPath, conn, p.ReconnectBackoff, p.Log)
+	defer func() { _ = session.Close() }()
+	if hook != nil {
+		session.WatchTokens(hook.push)
+		hook.attach(session)
+	}
+	go session.Run(context.WithoutCancel(ctx))
 	mp, err := mount(p.Spec.Remote.FsPath, "/dev/fd/"+strconv.Itoa(fd), opts)
 	if err != nil {
-		_ = conn.Close()
 		return err
 	}
 	col.setVFS(mp.VFS.Stats)
-	session := handoff.NewSession(p.SockPath, conn, p.ReconnectBackoff, p.Log)
-	defer func() { _ = session.Close() }()
 	if err := session.Send(handoff.MsgReady); err != nil {
 		return err
 	}
-	p.Log.Info("mount ready", "fs", p.Spec.Remote.FsPath, "identity", p.Spec.Identity)
+	p.Log.Info("mount ready", "fs", p.Spec.Remote.FsPath, "identity", p.Spec.Identity, "tokenWriteBack", len(p.Spec.Tokens))
 	ready.Store(true)
-	go session.Run(context.WithoutCancel(ctx))
-	return stop(ctx, p, mp, session, func() { ready.Store(false) })
+	return stop(ctx, p, mp, session, func() { ready.Store(false) }, func() { flushTokens(hook, session, p.Log) })
+}
+
+// flushTokens runs after the drain and before the drained report: the node plugin
+// closes the connection on drained, so token-saved replies must arrive first. A
+// refresh still holding the lock reports its token, and every token is confirmed;
+// one not yet in the Token Secret would be spent for the next Mount Pod.
+func flushTokens(hook *tokenHook, session *handoff.Session, log *slog.Logger) {
+	if hook == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), tokenSaveWait)
+	defer cancel()
+	if !hook.waitIdle(ctx) || !session.WaitTokensSaved(ctx) {
+		log.Warn("token write-back: refreshed token not confirmed before exit", "waited", tokenSaveWait)
+	}
 }
 
 func prepare(p Params) (Options, error) {
@@ -122,10 +150,10 @@ func mount(fsPath, mountpoint string, opts Options) (*mountlib.MountPoint, error
 	return mp, nil
 }
 
-// stop waits for SIGTERM or the end of serving, drains, reports, and waits briefly
-// for the plugin to unmount: rclone cannot unmount a /dev/fd/N mountpoint itself.
-// notReady runs once stopping starts.
-func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *handoff.Session, notReady func()) error {
+// stop waits for SIGTERM or the end of serving, drains, flushes tokens, reports, and
+// waits briefly for the plugin to unmount: rclone cannot unmount a /dev/fd/N
+// mountpoint itself. notReady runs once stopping starts.
+func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *handoff.Session, notReady, flush func()) error {
 	var serveErr error
 	served := false
 	select {
@@ -141,6 +169,7 @@ func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *hando
 		msg = handoff.MsgDrainTimeout
 		p.Log.Warn("drain timed out, uploads may remain in the cache")
 	}
+	flush()
 	if err := session.Send(msg); err != nil {
 		p.Log.Warn("report drain result", "msg", msg, "err", err)
 	}

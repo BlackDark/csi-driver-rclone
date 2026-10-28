@@ -27,6 +27,7 @@ Works:
 - Any rclone backend, nested remotes (crypt over OneDrive, union) and encrypted configs (`configData` + `configPassword`).
 - ReadWriteMany across nodes, with one Mount Pod and Cache per node.
 - Cache on hostPath (default, survives Mount Pod replacement) or any volume source (`cacheVolume`).
+- OAuth backends with single-use or rotating refresh tokens (Box, OneDrive): refreshed tokens are written back to a driver-owned Token Secret and one refresher at a time holds a Lease, so the next Mount Pod and other volumes on the same token keep working ([ADR 0004](docs/adr/0004-oauth-token-write-back.md)).
 - Upload drain on stop, bounded by a timeout. A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted ([ADR 0003](docs/adr/0003-mount-pod-crash-recovery.md)), or are evicted for their controller to recreate with `mountPod.healWorkloads.enabled` ([healing](docs/operations.md#workload-healing)).
 - Prometheus metrics for every component, with optional ServiceMonitor, PodMonitor and Grafana dashboard ([metrics](docs/reference/metrics.md)).
 
@@ -159,7 +160,7 @@ Moving from a host systemd `rclone mount`: [migration guide](docs/guides/migrate
 
 ## Operate
 
-- [Operations](docs/operations.md): Mount Pod memory sizing, priority, upgrades.
+- [Operations](docs/operations.md): Mount Pod memory sizing, priority, OAuth tokens, upgrades.
 - [Metrics](docs/reference/metrics.md): series, ports, monitors, dashboard.
 - [Docs map](docs/README.md).
 
@@ -170,6 +171,7 @@ Moving from a host systemd `rclone mount`: [migration guide](docs/guides/migrate
 - One FUSE mount has one ownership: all pods on a volume see the same `uid`, `gid` and `umask`.
 - A changed Mount Spec takes effect once the old Mount Pod on that node is released.
 - The metrics endpoints are unauthenticated plain HTTP inside the cluster.
+- OAuth tokens refreshed by rclone go to a Token Secret in the driver namespace, not back into your Credential Secret; re-authorize by changing the token in the Credential Secret ([operations](docs/operations.md#oauth-tokens-and-git-rollouts)). Token Secrets are not garbage collected.
 
 ## Development
 

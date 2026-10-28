@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -59,22 +60,29 @@ func (c *Conn) Adopt() error {
 }
 
 // Send writes one message line.
-func (c *Conn) Send(m Message) error {
-	if _, err := c.c.Write(encode(m, "")); err != nil {
+func (c *Conn) Send(m Message) error { return c.send(m, "") }
+
+func (c *Conn) send(m Message, arg string) error {
+	if _, err := c.c.Write(encode(m, arg)); err != nil {
 		return fmt.Errorf("handoff: send %s: %w", m, err)
 	}
 	return nil
 }
 
-// Wait blocks until the server closes the connection; nil on clean EOF.
-func (c *Conn) Wait() error {
-	buf := make([]byte, maxLine)
+// readLoop passes every server line to f until the server closes the connection;
+// nil on clean EOF. Only for after the handshake: it buffers past the first line.
+func (c *Conn) readLoop(f func(Message, string)) error {
+	r := bufio.NewReaderSize(c.c, maxLine)
 	for {
-		if _, err := c.c.Read(buf); err != nil {
+		line, err := readLine(r)
+		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
+		}
+		if m, arg, perr := parseLine(line); perr == nil {
+			f(m, arg)
 		}
 	}
 }

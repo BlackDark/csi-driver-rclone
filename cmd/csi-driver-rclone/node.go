@@ -108,13 +108,16 @@ func runNode(args []string, stderr io.Writer) error {
 		return fmt.Errorf("node: kube client: %w", err)
 	}
 	reg := metrics.NewRegistry()
+	nm := node.NewMetrics(reg)
+	tokens := tokenManager(cs, f.cfg, nm, log)
 	srv := node.New(f.cfg, node.Deps{
 		Kube:    node.NewKube(cs, f.cfg.Pod.Namespace),
 		Mounter: node.NewBindMounter(),
 		Fuse:    node.RealFuse{},
 		Handoff: node.RealHandoff{},
 		Log:     log,
-		Metrics: node.NewMetrics(reg),
+		Metrics: nm,
+		Tokens:  tokens,
 	})
 	reg.MustRegister(srv.Collector())
 	rpc := metrics.NewGRPC(reg)
@@ -125,6 +128,7 @@ func runNode(args []string, stderr io.Writer) error {
 		return fmt.Errorf("node: %w", err)
 	}
 	watchMountPods(ctx, cs, f.cfg, srv)
+	watchTokenSecrets(ctx, cs, f.cfg, tokens)
 	return csiserver.Serve(ctx, f.endpoint, log, func(g *grpc.Server) {
 		csi.RegisterIdentityServer(g, &identity.Server{Version: version})
 		csi.RegisterNodeServer(g, srv)

@@ -56,6 +56,8 @@ type ServerConfig struct {
 	FD       int // FUSE fd, used in ModeFresh; the caller keeps ownership
 	Mode     ServerMode
 	UID, GID int // socket owner (the Mount Pod's uid/gid); -1 leaves it unchanged
+	// Tokens serves OAuth token write-back; nil denies every token lock.
+	Tokens TokenHandler
 }
 
 // SocketPerm lets owner and group connect, nobody else.
@@ -68,7 +70,7 @@ func Serve(ctx context.Context, cfg ServerConfig, events chan<- Event) error {
 	if err != nil {
 		return err
 	}
-	s := &server{mode: cfg.Mode, fd: cfg.FD, events: events, conns: map[uint64]net.Conn{}}
+	s := &server{mode: cfg.Mode, fd: cfg.FD, tokens: cfg.Tokens, events: events, conns: map[uint64]net.Conn{}}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -121,6 +123,7 @@ type server struct {
 	fd     int
 	nextID uint64
 	conns  map[uint64]net.Conn
+	tokens TokenHandler
 	events chan<- Event
 }
 
@@ -158,8 +161,10 @@ func (s *server) handle(ctx context.Context, id uint64, c *net.UnixConn) {
 	if !s.handshake(ctx, id, c, r) {
 		return
 	}
+	tc := newTokenConn(s.tokens, c)
+	defer tc.close()
 	for {
-		line, err := r.ReadString('\n')
+		line, err := readLine(r)
 		if err != nil {
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				err = nil
@@ -167,12 +172,37 @@ func (s *server) handle(ctx context.Context, id uint64, c *net.UnixConn) {
 			s.emit(ctx, Event{Kind: EventClosed, Conn: id, Err: err})
 			return
 		}
-		m, _, err := parseLine(line)
-		if err != nil || !statusMessages[m] {
-			s.emit(ctx, Event{Kind: EventClosed, Conn: id, Err: fmt.Errorf("handoff: unexpected %q", truncate(line))})
-			return
+		m, arg, err := parseLine(line)
+		switch {
+		case err == nil && statusMessages[m]:
+			s.emit(ctx, Event{Kind: statusKind[m], Conn: id})
+			continue
+		case err == nil && clientTokenMessages[m]:
+			if err = tc.handle(ctx, m, arg); err == nil {
+				continue
+			}
 		}
-		s.emit(ctx, Event{Kind: statusKind[m], Conn: id})
+		s.emit(ctx, Event{Kind: EventClosed, Conn: id, Err: fmt.Errorf("handoff: unexpected %q", truncate(line))})
+		return
+	}
+}
+
+var clientTokenMessages = map[Message]bool{
+	MsgTokenSubscribe: true, MsgTokenLock: true, MsgTokenUnlock: true, MsgTokenSave: true,
+}
+
+// readLine reads one line of at most maxTokenLine bytes.
+func readLine(r *bufio.Reader) (string, error) {
+	var b []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		b = append(b, chunk...)
+		if len(b) > maxTokenLine {
+			return "", errors.New("handoff: line too long")
+		}
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return string(b), err
+		}
 	}
 }
 

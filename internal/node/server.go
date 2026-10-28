@@ -15,6 +15,7 @@ import (
 	"k8s.io/utils/clock"
 
 	"github.com/BlackDark/csi-driver-rclone/internal/mountpod"
+	"github.com/BlackDark/csi-driver-rclone/internal/oauthtoken"
 )
 
 // Config is the node plugin's settings.
@@ -43,6 +44,8 @@ type Deps struct {
 	Log       *slog.Logger
 	// Metrics are the event counters; nil gets an unregistered set.
 	Metrics *Metrics
+	// Tokens is OAuth token write-back; nil disables it.
+	Tokens *oauthtoken.Manager
 }
 
 // Server is the CSI Node service.

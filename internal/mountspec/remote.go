@@ -6,27 +6,27 @@ var secretOnlyKeys = map[string]bool{
 }
 
 // resolveRemote builds the isolated Remote from configData or the remoteType shorthand.
-func resolveRemote(secrets, ctx map[string]string, volumeID string) (Remote, error) {
+func resolveRemote(secrets, ctx map[string]string, volumeID string) (Remote, []TokenSection, error) {
 	path, err := remotePath(secrets, ctx)
 	if err != nil {
-		return Remote{}, err
+		return Remote{}, nil, err
 	}
 	configData, err := rawConfig(secrets, ctx[KeyRemote])
 	if err != nil {
-		return Remote{}, err
+		return Remote{}, nil, err
 	}
 	if isEncrypted(configData) {
 		if configData, err = decryptConfig(configData, secrets[KeyConfigPassword]); err != nil {
-			return Remote{}, err
+			return Remote{}, nil, err
 		}
 	}
 	names, err := sectionNames(configData)
 	if err != nil {
-		return Remote{}, err
+		return Remote{}, nil, err
 	}
 	name, err := pickRemote(names, ctx[KeyRemote])
 	if err != nil {
-		return Remote{}, err
+		return Remote{}, nil, err
 	}
 	rename := make(map[string]string, len(names))
 	for _, n := range names {
@@ -35,7 +35,7 @@ func resolveRemote(secrets, ctx map[string]string, volumeID string) (Remote, err
 	return Remote{
 		ConfigData: isolateConfig(configData, rename),
 		FsPath:     rename[name] + ":" + path,
-	}, nil
+	}, tokenSections(configData, rename), nil
 }
 
 func remotePath(secrets, ctx map[string]string) (string, error) {

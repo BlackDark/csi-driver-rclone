@@ -1,0 +1,40 @@
+# Fake OAuth2 server with single-use refresh tokens and a minimal HiDrive API, for
+# the token write-back e2e (test/e2e/oauth_test.go). State is in memory.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fakeoauth
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fakeoauth
+  namespace: fakeoauth
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: fakeoauth}
+  template:
+    metadata:
+      labels: {app: fakeoauth}
+    spec:
+      containers:
+        - name: fakeoauth
+          image: fakeoauth:e2e
+          imagePullPolicy: Never
+          args: [-ttl=20s]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /stats, port: 8080}
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fakeoauth
+  namespace: fakeoauth
+spec:
+  selector: {app: fakeoauth}
+  ports:
+    - port: 8080

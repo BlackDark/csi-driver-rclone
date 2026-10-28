@@ -6,7 +6,8 @@ metadata:
   labels:
     {{- include "csi-driver-rclone.labels" . | nindent 4 }}
 ---
-# Mount Pods and their owned Secrets live in the release namespace only.
+# Mount Pods, their owned Secrets, Token Secrets and refresh Leases live in the
+# release namespace only.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -22,6 +23,14 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [patch]
+  # update: Token Secrets of OAuth token write-back (docs/adr/0004-oauth-token-write-back.md).
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [update]
+  # Refresh Leases: one OAuth token refresher across nodes.
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

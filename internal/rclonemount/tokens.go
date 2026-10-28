@@ -1,0 +1,218 @@
+package rclonemount
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/rclone/rclone/fs"
+	"github.com/rclone/rclone/fs/config"
+
+	"github.com/BlackDark/csi-driver-rclone/internal/mountspec"
+)
+
+// tokenLocker is the Mount Pod's line to the node plugin (handoff.Session).
+type tokenLocker interface {
+	LockToken(ctx context.Context, section string) (string, error)
+	UnlockToken(section string) error
+	SaveToken(section, token string) error
+}
+
+// tokenHook sits between rclone's oauthutil and the in-memory config: rclone reads
+// the token key right before it refreshes an expired token (oauthutil reReadToken)
+// and writes it after. An expired read takes the node plugin's refresh lock and
+// returns the newest token, so rclone refreshes only when nobody else has.
+type tokenHook struct {
+	get      func(section, key string) (string, bool)
+	set      func(section, key, value string) error // rclone's write: stores and saves
+	store    func(section, key, value string)       // memory only, for tokens from the plugin
+	original map[string]string                      // isolated section -> user section
+	isolated map[string]string                      // user section -> isolated section
+	log      *slog.Logger
+	now      func() time.Time
+
+	lockTimeout time.Duration // bound on waiting for the lock
+	// holdTimeout releases a lock rclone never saves after; it matches the node
+	// plugin's Lease MaxHold, far beyond rclone's own HTTP timeouts for a refresh.
+	holdTimeout time.Duration
+
+	lockMu   map[string]*sync.Mutex // per section: serializes lock requests; never held by push
+	mu       sync.Mutex
+	locker   tokenLocker
+	held     map[string]*time.Timer // by isolated section
+	failures map[string]uint64      // lock failures by isolated section
+	idle     chan struct{}          // closed when held becomes empty; nil while it is
+	queued   func()                 // tests only: runs once a read took its failure snapshot
+}
+
+func newTokenHook(tokens []mountspec.TokenSection, log *slog.Logger) *tokenHook {
+	h := &tokenHook{
+		original: map[string]string{}, isolated: map[string]string{}, held: map[string]*time.Timer{},
+		lockMu: map[string]*sync.Mutex{}, failures: map[string]uint64{},
+		log: log, now: time.Now, lockTimeout: time.Minute, holdTimeout: 2 * time.Minute,
+	}
+	for _, ts := range tokens {
+		h.original[ts.Isolated] = ts.Section
+		h.isolated[ts.Section] = ts.Isolated
+		h.lockMu[ts.Isolated] = &sync.Mutex{}
+	}
+	return h
+}
+
+// install wraps rclone's config accessors; one mount per process, so global is fine.
+func (h *tokenHook) install() {
+	h.get, h.set, h.store = fs.ConfigFileGet, fs.ConfigFileSet, config.FileSetValue
+	fs.ConfigFileGet, fs.ConfigFileSet = h.getValue, h.setValue
+}
+
+func (h *tokenHook) attach(l tokenLocker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.locker = l
+}
+
+func (h *tokenHook) getValue(section, key string) (string, bool) {
+	v, ok := h.get(section, key)
+	user, managed := h.original[section]
+	if !managed || key != mountspec.KeyToken || h.valid(v) {
+		return v, ok
+	}
+	h.mu.Lock()
+	queuedAt := h.failures[section]
+	h.mu.Unlock()
+	if h.queued != nil {
+		h.queued() // test seam: this read has its failure snapshot
+	}
+	h.lockMu[section].Lock()
+	defer h.lockMu[section].Unlock()
+	if v, ok = h.get(section, key); h.valid(v) {
+		return v, ok // pushed while we waited
+	}
+	h.mu.Lock()
+	locker, holding := h.locker, h.held[section] != nil
+	// Only callers queued behind a failed attempt skip the lock, so they do not each
+	// wait a full lockTimeout; a later read asks again once the plugin is back.
+	failedWhileQueued := h.failures[section] != queuedAt
+	h.mu.Unlock()
+	if holding || failedWhileQueued {
+		return v, ok
+	}
+	if locker == nil {
+		h.log.Warn("token write-back: no node plugin connection, refreshing without the lock", "section", user)
+		return v, ok
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), h.lockTimeout)
+	defer cancel()
+	newest, err := locker.LockToken(ctx, user)
+	if err != nil {
+		h.log.Warn("token write-back: no refresh lock, refreshing without it", "section", user, "err", err)
+		h.mu.Lock()
+		h.failures[section]++
+		h.mu.Unlock()
+		return v, ok
+	}
+	if newest != "" && newest != v {
+		h.store(section, key, newest)
+		v, ok = newest, true
+	}
+	if h.valid(v) {
+		_ = locker.UnlockToken(user) // refreshed elsewhere: nothing to do
+		return v, ok
+	}
+	h.mu.Lock()
+	h.held[section] = time.AfterFunc(h.holdTimeout, func() { h.release(section, locker) })
+	h.mu.Unlock()
+	return v, ok
+}
+
+func (h *tokenHook) release(section string, l tokenLocker) {
+	if h.forget(section) {
+		_ = l.UnlockToken(h.original[section])
+	}
+}
+
+// forget drops the held lock of section; true if it was held.
+func (h *tokenHook) forget(section string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	t := h.held[section]
+	delete(h.held, section)
+	if t != nil {
+		t.Stop()
+	}
+	if len(h.held) == 0 && h.idle != nil {
+		close(h.idle)
+		h.idle = nil
+	}
+	return t != nil
+}
+
+// waitIdle blocks until no refresh holds the lock, or ctx is done. Called on stop
+// after the VFS is shut down, so a refresh still running can report its token.
+func (h *tokenHook) waitIdle(ctx context.Context) bool {
+	h.mu.Lock()
+	if len(h.held) == 0 {
+		h.mu.Unlock()
+		return true
+	}
+	if h.idle == nil {
+		h.idle = make(chan struct{})
+	}
+	ch := h.idle
+	h.mu.Unlock()
+	select {
+	case <-ch:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (h *tokenHook) setValue(section, key, value string) error {
+	err := h.set(section, key, value)
+	user, managed := h.original[section]
+	if !managed || key != mountspec.KeyToken {
+		return err
+	}
+	h.forget(section)
+	h.mu.Lock()
+	locker := h.locker
+	h.mu.Unlock()
+	if locker == nil {
+		h.log.Warn("token write-back: no node plugin connection, refreshed token kept in memory only", "section", user)
+		return err
+	}
+	if serr := locker.SaveToken(user, value); serr != nil {
+		h.log.Warn("token write-back: report refreshed token", "section", user, "err", serr)
+	} else {
+		h.log.Info("token write-back: reported refreshed token", "section", user)
+	}
+	return err
+}
+
+// push applies a token the node plugin pushed; rclone picks it up on its next read.
+func (h *tokenHook) push(user, token string) {
+	section, ok := h.isolated[user]
+	if !ok || token == "" {
+		return
+	}
+	if cur, _ := h.get(section, mountspec.KeyToken); cur == token {
+		return
+	}
+	h.store(section, mountspec.KeyToken, token)
+	h.log.Debug("token write-back: received updated token", "section", user)
+}
+
+// valid mirrors oauth2.Token.Valid with its 10s expiry delta; no expiry means valid.
+func (h *tokenHook) valid(token string) bool {
+	var t struct {
+		AccessToken string    `json:"access_token"`
+		Expiry      time.Time `json:"expiry"`
+	}
+	if token == "" || json.Unmarshal([]byte(token), &t) != nil || t.AccessToken == "" {
+		return false
+	}
+	return t.Expiry.IsZero() || t.Expiry.Add(-10*time.Second).After(h.now())
+}

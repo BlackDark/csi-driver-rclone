@@ -150,6 +150,9 @@ func (s *Server) serve(m *fuseMount, mode handoff.ServerMode) {
 		SockPath: mountpod.SockPath(s.cfg.Pod.KubeletDir, m.id), FD: m.fd, Mode: mode,
 		UID: int(s.cfg.Pod.UID), GID: int(s.cfg.Pod.GID),
 	}
+	if m.spec != nil {
+		cfg.Tokens = s.deps.Tokens.Handler(m.id, m.spec.Tokens)
+	}
 	go func() {
 		defer close(m.served)
 		if err := s.deps.Handoff.Serve(ctx, cfg, events); err != nil {
