@@ -34,7 +34,7 @@ docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor=u
 description = "kind + MinIO e2e: bring up cluster, install chart, run test/e2e"
 run = [
   "bash hack/e2e/up.sh",
-  "go test -tags e2e -count=1 -v -timeout 15m ./test/e2e/",
+  "go test -tags e2e -count=1 -v -timeout 25m ./test/e2e/",
 ]
 
 [tasks."e2e:down"]

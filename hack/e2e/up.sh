@@ -14,7 +14,9 @@ fi
 kubectl config use-context "kind-$CLUSTER" >/dev/null
 
 docker build -t "$IMAGE" --build-arg VERSION=e2e "$root"
-kind load docker-image --name "$CLUSTER" "$IMAGE"
+# Second tag for the upgrade e2e (test/e2e/upgrade_test.go): another version, same code.
+docker build -t "${IMAGE}-v2" --build-arg VERSION=e2e-v2 "$root"
+kind load docker-image --name "$CLUSTER" "$IMAGE" "${IMAGE}-v2"
 
 kubectl apply -f "$here/minio.yaml"
 
