@@ -92,14 +92,13 @@ func Run(ctx context.Context, p Params) error {
 	}
 	p.Log.Info("mount ready", "fs", p.Spec.Remote.FsPath, "identity", p.Spec.Identity, "tokenWriteBack", len(p.Spec.Tokens))
 	ready.Store(true)
-	err = stop(ctx, p, mp, session, func() { ready.Store(false) })
-	flushTokens(hook, session, p.Log)
-	return err
+	return stop(ctx, p, mp, session, func() { ready.Store(false) }, func() { flushTokens(hook, session, p.Log) })
 }
 
-// flushTokens runs after the VFS is shut down, before the session closes: a refresh
-// still holding the lock reports its token, and every reported token is confirmed.
-// A refreshed token not yet in the Token Secret would be spent for the next Mount Pod.
+// flushTokens runs after the drain and before the drained report: the node plugin
+// closes the connection on drained, so token-saved replies must arrive first. A
+// refresh still holding the lock reports its token, and every token is confirmed;
+// one not yet in the Token Secret would be spent for the next Mount Pod.
 func flushTokens(hook *tokenHook, session *handoff.Session, log *slog.Logger) {
 	if hook == nil {
 		return
@@ -151,10 +150,10 @@ func mount(fsPath, mountpoint string, opts Options) (*mountlib.MountPoint, error
 	return mp, nil
 }
 
-// stop waits for SIGTERM or the end of serving, drains, reports, and waits briefly
-// for the plugin to unmount: rclone cannot unmount a /dev/fd/N mountpoint itself.
-// notReady runs once stopping starts.
-func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *handoff.Session, notReady func()) error {
+// stop waits for SIGTERM or the end of serving, drains, flushes tokens, reports, and
+// waits briefly for the plugin to unmount: rclone cannot unmount a /dev/fd/N
+// mountpoint itself. notReady runs once stopping starts.
+func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *handoff.Session, notReady, flush func()) error {
 	var serveErr error
 	served := false
 	select {
@@ -170,6 +169,7 @@ func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *hando
 		msg = handoff.MsgDrainTimeout
 		p.Log.Warn("drain timed out, uploads may remain in the cache")
 	}
+	flush()
 	if err := session.Send(msg); err != nil {
 		p.Log.Warn("report drain result", "msg", msg, "err", err)
 	}
