@@ -19,7 +19,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/blackdark/csi-driver-rclone
-  CHART_REPO: oci://ghcr.io/blackdark/charts
+  CHART_REPO: oci://ghcr.io/blackdark/csi-driver-rclone/charts
 
 jobs:
   # Full CI including e2e on the tag commit: e2e is not part of every main push.
