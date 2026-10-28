@@ -2,31 +2,66 @@
 
 # csi-driver-rclone
 
-**Kubernetes CSI driver for rclone: mount S3, WebDAV, SFTP and other rclone remotes as volumes.**
+**Kubernetes CSI driver for rclone: mount S3, OneDrive, WebDAV, SFTP and any other rclone remote as a volume.**
 
 [![CI](https://github.com/BlackDark/csi-driver-rclone/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackDark/csi-driver-rclone/actions/workflows/ci.yml)
 
 </div>
 
-## Status
+Status: pre-alpha. Linux nodes, Kubernetes ≥1.34 (the bundled external-provisioner v6 needs the `storage/v1` VolumeAttributesClass API).
 
-Pre-alpha: Static Volumes work, with pods on one node sharing one Mount Pod that lingers `mountPod.linger` (default 2m) after the last pod leaves and drains pending uploads on stop. Mounts survive node plugin restarts and `helm upgrade`; a Mount Pod in use keeps its image, and Mount Pods started later use the new one. Mount Pod resources default to a 64Mi request with no memory limit and can be set per volume ([operations](docs/operations.md): memory sizing, upgrades). A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted. Dynamic Volumes work: a StorageClass gives each PVC its own templated subpath, and deleting the PVC keeps the data. Inline Volumes work, with a Credential Secret in the pod's namespace and a restricted option subset. The hostPath Cache survives Mount Pod replacement; `cacheVolume` puts it on any volume source. Every component serves Prometheus metrics, with an optional ServiceMonitor, PodMonitor and Grafana dashboard ([series](docs/reference/metrics.md)). Each `v<version>` tag publishes a multi-arch image (amd64, arm64) and the OCI chart to GHCR, both signed with cosign. What v1 covers: [docs/scope.md](docs/scope.md).
+## Why
+
+It replaces a host systemd `rclone mount` plus a hostPath PV with a volume Kubernetes manages.
+
+- One Mount Pod per volume and node. Every pod on that node using the volume shares one rclone process and one Cache, each with its own `subPath` and read-only flag ([ADR 0001](docs/adr/0001-shared-mount-pod-per-volume-and-node.md)).
+- Mounts survive node plugin restarts and `helm upgrade`; workload IO carries on. A live Mount Pod keeps its image; new Mount Pods use the new one ([operations](docs/operations.md#upgrades)).
+- Credentials come only from a Credential Secret. Mount Options are allowlisted. Mount Pods run unprivileged and non-root, and only the node plugin is privileged ([ADR 0002](docs/adr/0002-mount-pod-privilege.md)). There is no rc server.
+
+## What works, what does not
+
+Full list with reasons: [docs/scope.md](docs/scope.md).
+
+Works:
+- Static, Dynamic (one templated subpath per PVC) and Inline Volumes.
+- Any rclone backend, nested remotes (crypt over OneDrive, union) and encrypted configs (`configData` + `configPassword`).
+- ReadWriteMany across nodes, with one Mount Pod and Cache per node.
+- Cache on hostPath (default, survives Mount Pod replacement) or any volume source (`cacheVolume`).
+- Upload drain on stop, bounded by a timeout. A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted ([ADR 0003](docs/adr/0003-mount-pod-crash-recovery.md)).
+- Prometheus metrics for every component, with optional ServiceMonitor, PodMonitor and Grafana dashboard ([metrics](docs/reference/metrics.md)).
+
+Does not work, by design:
+- Credentials in PV or StorageClass attributes.
+- Backend flags (`--s3-*`, `--onedrive-*`) as Mount Options: put them in `configData`.
+- Per-pod uid, gid or `fsGroup` on a shared mount: set `uid`, `gid`, `umask` per volume.
+- rc API and `vfs/refresh`: use `poll-interval`.
+- Consistency across nodes, capacity, quotas, snapshots, expansion, deleting remote data on PVC delete.
+- mergerfs: use an rclone `union` remote.
+- Windows nodes, Kubernetes < 1.34.
+
+## Install
+
+The node plugin is privileged, so its namespace needs the `privileged` Pod Security level. Mount Pods run in the same namespace. Label the namespace before installing; pods created before the label are rejected.
+
+```bash
+kubectl create namespace csi-rclone
+kubectl label namespace csi-rclone pod-security.kubernetes.io/enforce=privileged
+helm install csi-rclone oci://ghcr.io/blackdark/charts/csi-driver-rclone --version <version> -n csi-rclone
+```
+
+The image defaults to `ghcr.io/blackdark/csi-driver-rclone:<appVersion>`. Chart values: [values.yaml](charts/csi-driver-rclone/values.yaml). Verify signatures with:
+
+```bash
+cosign verify ghcr.io/blackdark/csi-driver-rclone:<version> \
+  --certificate-identity-regexp '^https://github.com/BlackDark/csi-driver-rclone/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+From source: `docker build -t csi-driver-rclone:dev .`, load the image into the cluster, and install `charts/csi-driver-rclone` with `--set image.repository=csi-driver-rclone --set image.tag=dev`.
 
 ## Quickstart
 
-The node plugin is privileged, so its namespace needs the `privileged` Pod Security level. Mount Pods run in the same namespace.
-
-```bash
-helm install csi-rclone oci://ghcr.io/blackdark/charts/csi-driver-rclone --version <version> \
-  -n csi-rclone --create-namespace
-kubectl label namespace csi-rclone pod-security.kubernetes.io/enforce=privileged --overwrite
-```
-
-The chart's image defaults to `ghcr.io/blackdark/csi-driver-rclone:<appVersion>`. Pods created before the label are rejected; label the namespace first (`kubectl create namespace csi-rclone` and drop `--create-namespace`) or restart the DaemonSet after labelling. Verify signatures with `cosign verify ghcr.io/blackdark/csi-driver-rclone:<version> --certificate-identity-regexp '^https://github.com/BlackDark/csi-driver-rclone/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
-
-From source: `docker build -t csi-driver-rclone:dev .`, load it into the cluster, and install `charts/csi-driver-rclone` with `--set image.repository=csi-driver-rclone --set image.tag=dev`.
-
-A Static Volume: credentials go in a Credential Secret, everything else in `volumeAttributes` ([keys](docs/reference/volume-parameters.md)).
+Credentials go in a Credential Secret; everything else in `volumeAttributes` or StorageClass parameters ([keys](docs/reference/volume-parameters.md)).
 
 ```yaml
 apiVersion: v1
@@ -40,7 +75,11 @@ stringData:
     access_key_id = ACCESS_KEY
     secret_access_key = SECRET_KEY
     endpoint = http://minio.example:9000
----
+```
+
+### Static Volume
+
+```yaml
 apiVersion: v1
 kind: PersistentVolume
 metadata: {name: bucket}
@@ -68,7 +107,9 @@ spec:
   resources: {requests: {storage: 1Gi}}
 ```
 
-A Dynamic Volume per PVC from a StorageClass. The controller fills in `${pvc.namespace}`, `${pvc.name}` and `${pv.name}`. Deleting a PVC removes only the PV; the data stays on the remote. The Credential Secret must not set `remotePath`. The chart can render this StorageClass (`storageClass.enabled`).
+### Dynamic Volume
+
+Each PVC gets its own subpath. `${pvc.namespace}`, `${pvc.name}` and `${pv.name}` are filled in. Deleting the PVC removes only the PV; the data stays. The Credential Secret must not set `remotePath`. The chart can render the StorageClass (`storageClass.enabled`).
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -92,7 +133,9 @@ spec:
   resources: {requests: {storage: 1Gi}}
 ```
 
-An Inline Volume in a pod spec, with the Credential Secret in the pod's namespace. Only a subset of Mount Options is accepted, and no `allowAllOptions`, `cacheVolume` or Mount Pod resources ([keys](docs/reference/volume-parameters.md#inline-volumes)). Each pod gets its own Mount Pod.
+### Inline Volume
+
+The Credential Secret lives in the pod's namespace. Each pod gets its own Mount Pod. Only a subset of Mount Options is accepted, and `allowAllOptions`, `cacheVolume` and Mount Pod resources are rejected ([keys](docs/reference/volume-parameters.md#inline-volumes)).
 
 ```yaml
 apiVersion: v1
@@ -111,6 +154,22 @@ spec:
         volumeAttributes: {remote: s3, remotePath: my-bucket, vfs-cache-mode: writes}
         nodePublishSecretRef: {name: s3-creds}
 ```
+
+Moving from a host systemd `rclone mount`: [migration guide](docs/guides/migrate-from-systemd.md).
+
+## Operate
+
+- [Operations](docs/operations.md): Mount Pod memory sizing, priority, upgrades.
+- [Metrics](docs/reference/metrics.md): series, ports, monitors, dashboard.
+- [Docs map](docs/README.md).
+
+## Limitations
+
+- A crashed or OOM-killed Mount Pod ends the mount for the pods using it; they must be restarted. There is no default memory limit for that reason.
+- Writes held by `vfs-write-back` are only on the node's Cache until uploaded; other nodes see them after upload and `poll-interval`.
+- One FUSE mount has one ownership: all pods on a volume see the same `uid`, `gid` and `umask`.
+- A changed Mount Spec takes effect once the old Mount Pod on that node is released.
+- The metrics endpoints are unauthenticated plain HTTP inside the cluster.
 
 ## Development
 
