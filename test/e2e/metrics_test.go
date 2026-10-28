@@ -20,7 +20,7 @@ var (
 	nodeSeries = []string{
 		"csi_rclone_requests_total", "csi_rclone_request_duration_seconds_bucket", "csi_rclone_mount_pods",
 		"csi_rclone_mount_pod_info", "csi_rclone_mount_healthy", "csi_rclone_drain_total",
-		"csi_rclone_mount_lost_total", "csi_rclone_adoptions_total",
+		"csi_rclone_mount_lost_total", "csi_rclone_adoptions_total", "csi_rclone_workload_heals_total",
 	}
 	controllerSeries = []string{"csi_rclone_requests_total", "csi_rclone_request_duration_seconds_bucket"}
 	mountSeries      = []string{

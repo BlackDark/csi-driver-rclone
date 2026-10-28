@@ -198,6 +198,9 @@ func TestMountPodCrash(t *testing.T) {
 		}
 		return hasEvent(ctx, cs, driverNS(), old.Name, "MountLost")
 	})
+	poll(ctx, t, "HealBlocked Event: a bare pod is not evicted", func() (bool, error) {
+		return hasEvent(ctx, cs, appNS, pod.Name, "HealBlocked")
+	})
 	poll(ctx, t, "Mount Pod recreated", func() (bool, error) {
 		p, err := cs.CoreV1().Pods(driverNS()).Get(ctx, old.Name, metav1.GetOptions{})
 		return err == nil && p.UID != old.UID && p.Status.Phase == corev1.PodRunning, nil
