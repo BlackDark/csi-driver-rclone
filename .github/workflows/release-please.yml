@@ -1,0 +1,47 @@
+# Pushes to main update the release PR (version from Conventional Commits, CHANGELOG.md, Chart.yaml
+# version + appVersion). Merging it makes release-please tag vX.Y.Z and create the GitHub release;
+# publish then runs release.yml for that tag. Tags made with GITHUB_TOKEN trigger no workflows,
+# hence the direct call. RELEASE_PLEASE_TOKEN (PAT or App token) lets the release PR run CI.
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write # release PR labels
+    outputs:
+      created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    uses: ./.github/workflows/release.yml # zizmor: ignore[self-repository] actionlint rejects $/ syntax
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+      checks: read
+      id-token: write
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}
