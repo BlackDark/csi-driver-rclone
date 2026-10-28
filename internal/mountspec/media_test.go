@@ -61,6 +61,7 @@ password = obscured
 		ConfigPassword: "pw",
 		Options:        wantOptions,
 		Identity:       got.Identity,
+		Tokens:         []TokenSection{{Section: "onedrive", Isolated: od, SeedHash: HashToken(`{"access_token":"x"}`)}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got  %+v\nwant %+v", got, want)

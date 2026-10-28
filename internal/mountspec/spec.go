@@ -27,6 +27,7 @@ const (
 	KeyCPULimit        = "mountPod.cpuLimit"
 	KeyMemoryRequest   = "mountPod.memoryRequest"
 	KeyMemoryLimit     = "mountPod.memoryLimit"
+	KeyTokenWriteBack  = "tokenWriteBack"
 )
 
 // Secret keys.
@@ -69,6 +70,8 @@ type Spec struct {
 	ReadOnly       bool
 	Mode           Mode
 	Identity       string // hex sha256 of everything that defines the shared mount
+	// Tokens are the sections whose OAuth token is written back; nil with tokenWriteBack "false".
+	Tokens []TokenSection
 }
 
 // Resolve validates the inputs and builds a Spec, or returns an *Error matching ErrInvalid.
@@ -89,9 +92,16 @@ func Resolve(in Input) (Spec, error) {
 			return Spec{}, err
 		}
 	}
-	remote, err := resolveRemote(in.Secrets, ctx, in.VolumeID)
+	writeBack, err := parseWriteBack(ctx[KeyTokenWriteBack])
 	if err != nil {
 		return Spec{}, err
+	}
+	remote, tokens, err := resolveRemote(in.Secrets, ctx, in.VolumeID)
+	if err != nil {
+		return Spec{}, err
+	}
+	if !writeBack {
+		tokens = nil
 	}
 	options, err := resolveOptions(opts, in.Mode, unrestricted)
 	if err != nil {
@@ -110,6 +120,7 @@ func Resolve(in Input) (Spec, error) {
 		CacheVolume:    cache,
 		ReadOnly:       in.ReadOnly,
 		Mode:           in.Mode,
+		Tokens:         tokens,
 	}
 	s.Identity = identity(in.VolumeID, s)
 	return s, nil
@@ -118,6 +129,7 @@ func Resolve(in Input) (Spec, error) {
 var reservedContextKeys = map[string]bool{
 	KeyRemote: true, KeyRemotePath: true, KeyAllowAllOptions: true, KeyCacheVolume: true,
 	KeyCPURequest: true, KeyCPULimit: true, KeyMemoryRequest: true, KeyMemoryLimit: true,
+	KeyTokenWriteBack: true,
 }
 
 var credentialHints = []string{"password", "pass", "secret", "token", "key", "credential"}
@@ -198,13 +210,18 @@ func validateCacheVolume(raw string) (string, error) {
 
 // identity excludes the per-publish ReadOnly so read-only and read-write pods share one Mount Pod.
 // Secrets are hashed together with the rest; the result is a fingerprint, not a lookup key.
+// Written-back tokens are blanked: a refresh must not replace the Mount Pod.
 func identity(volumeID string, s Spec) string {
+	configData := s.Remote.ConfigData
+	if len(s.Tokens) > 0 {
+		configData = blankTokens(configData)
+	}
 	canon, err := json.Marshal(struct {
 		VolumeID, ConfigData, FsPath, ConfigPassword, CacheVolume string
 		Options                                                   map[string]string
 		Unrestricted                                              bool
 		Resources                                                 Resources
-	}{volumeID, s.Remote.ConfigData, s.Remote.FsPath, s.ConfigPassword, s.CacheVolume,
+	}{volumeID, configData, s.Remote.FsPath, s.ConfigPassword, s.CacheVolume,
 		s.Options, s.Unrestricted, s.Resources})
 	if err != nil {
 		panic(err) // only strings, maps of strings and bools: cannot fail
@@ -228,6 +245,9 @@ func ValidateContext(vc map[string]string, mode Mode) error {
 		if err := rejectAdminKeys(ctx); err != nil {
 			return err
 		}
+	}
+	if _, err := parseWriteBack(ctx[KeyTokenWriteBack]); err != nil {
+		return err
 	}
 	if _, err := resolveOptions(opts, mode, unrestricted); err != nil {
 		return err
