@@ -127,7 +127,7 @@ metrics:
 
 sidecars:
   nodeDriverRegistrar:
-    image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.14.0@sha256:5244abbe87e01b35adeb8bb13882a74785df0c0619f8325c9e950395c3f72a97
+    image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0@sha256:b7fefd08651f00ac4df1a196ed4c621c2451fbb899297fe9fad9e36c667af0c0
     resources:
       requests:
         cpu: 5m
@@ -143,7 +143,7 @@ sidecars:
       limits:
         memory: 128Mi
   livenessProbe:
-    image: registry.k8s.io/sig-storage/livenessprobe:v2.19.0@sha256:06da0d5b8908072f2e4522692aee8dc119fba7247a9658497e1153992cd777e9
+    image: registry.k8s.io/sig-storage/livenessprobe:v2.20.0@sha256:19f2cf2f40e1987c7943945deca5f65cd4e4bf5cc0657fc78a5df131861578e8
     # Pod port the probe serves on; the pod has no hostNetwork.
     port: 9808
     resources:
