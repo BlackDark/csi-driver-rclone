@@ -180,6 +180,7 @@ git clone https://github.com/BlackDark/csi-driver-rclone && cd csi-driver-rclone
 mise install
 mise run check      # format, vet, lint, unit tests, csi-sanity, helm lint
 mise run test:fuse  # FUSE handoff in a Linux container (needs /dev/fuse)
+mise run test:fuse:host  # same on a Linux host with passwordless sudo (CI)
 mise run e2e        # kind + MinIO end to end; cluster csi-rclone-e2e
 mise run e2e:down
 ```

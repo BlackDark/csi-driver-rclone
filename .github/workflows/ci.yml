@@ -1,6 +1,8 @@
 # Rulesets require one check only: `check`, the gate over every job below.
 # release.yml ships a tag only when this workflow's `check` passed for its commit on main,
 # so pushes to main always run everything; docs-only PRs skip fuse and e2e.
+# Go caches: restored everywhere, saved only by pushes to main (never from PRs). Keyed on
+# go.sum: dependencies dominate compile time and change only with it.
 name: CI
 
 on:
@@ -57,8 +59,24 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - id: go-dirs
+        run: |
+          { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-test-${{ runner.os }}-${{ runner.arch }}-
       # gofmt, vet, golangci-lint, unit tests, csi-sanity (test/sanity), helm lint
       - run: mise run check
+      - if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   workflows:
     if: ${{ !github.event.pull_request.draft }}
@@ -86,7 +104,24 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
-      - run: mise run test:fuse
+      - id: go-dirs
+        run: |
+          { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: go-fuse-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-fuse-${{ runner.os }}-${{ runner.arch }}-
+      # Runner has /dev/fuse and passwordless sudo: no container, cached compile.
+      - run: mise run test:fuse:host
+      - if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   e2e:
     # PRs (non-draft, not docs-only) and main; not manual branch runs.
@@ -103,7 +138,23 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - id: go-dirs
+        run: |
+          { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: go-e2e-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-e2e-${{ runner.os }}-${{ runner.arch }}-
       - run: mise run e2e
+      - if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
       - name: Collect logs
         if: failure()
         run: |

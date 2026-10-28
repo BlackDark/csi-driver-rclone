@@ -14,12 +14,12 @@ Deviations:
 - Helm is the only install method (OCI chart on GHCR); no kustomize or raw manifests.
 - Images: distroless, non-root, multi-stage, native amd64 + arm64 runners.
 - golangci-lint in `mise run check` beside gofmt and go vet.
-- CI: `check` gates `mise run check` (includes csi-sanity, `test/sanity`), zizmor + actionlint, `test:fuse`, e2e. Docs-only PRs (`docs/**`, `*.md`) skip `test:fuse` and e2e; pushes to main run everything. `release.yml` on `v*` tags reruns only `mise run check`: `hack/release/check-main-ci.sh` requires the tag commit on main with a passing CI `check` there, and `hack/release/check-version.sh` ties the tag to Chart.yaml.
+- CI: `check` gates `mise run check` (includes csi-sanity, `test/sanity`), zizmor + actionlint, `test:fuse:host`, e2e. Go caches restore everywhere and save only on pushes to main; release.yml uses none. Docs-only PRs (`docs/**`, `*.md`) skip `test:fuse` and e2e; pushes to main run everything. `release.yml` on `v*` tags reruns only `mise run check`: `hack/release/check-main-ci.sh` requires the tag commit on main with a passing CI `check` there, and `hack/release/check-version.sh` ties the tag to Chart.yaml.
 
 ## Map
 
 - `cmd/csi-driver-rclone`: the one binary; modes `node`, `controller`, `mount`.
-- `charts/csi-driver-rclone`: the Helm chart. `hack/e2e` + `test/e2e`: kind + MinIO e2e (`mise run e2e`).
+- `charts/csi-driver-rclone`: the Helm chart. `hack/e2e` + `test/e2e`: kind + MinIO e2e (`mise run e2e`); the driver binary builds on the host (`Dockerfile` `BIN=local`). e2e tests that restart the node plugin, kill rclone or roll the chart stay serial; the rest `t.Parallel()`, scoped to their own volume.
 - Domain terms: `GLOSSARY.md`. Volume keys: `docs/reference/volume-parameters.md`. Decisions: `docs/adr/`. Scope: `docs/scope.md`. Spec: `docs/spec/`. Work items: `docs/tickets/`.
 - `refs/`: gitignored reference checkouts; read only, never edit or import.
 

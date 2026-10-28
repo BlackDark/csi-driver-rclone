@@ -1,6 +1,6 @@
 //go:build fuse_integration && linux
 
-// Needs root, /dev/fuse and CAP_SYS_ADMIN: run via `mise run test:fuse`.
+// Needs root, /dev/fuse and CAP_SYS_ADMIN: run via `mise run test:fuse` (or test:fuse:host).
 package rclonemount_test
 
 import (
@@ -40,6 +40,10 @@ func newFixture(t *testing.T) fixture {
 	for _, d := range []string{f.fuse, f.remote, f.cache} {
 		must(t, os.Mkdir(d, 0o777))
 		must(t, os.Chmod(d, 0o777))
+	}
+	if bin := os.Getenv("FUSE_IT_BIN"); bin != "" { // prebuilt: root may lack go (test:fuse:host)
+		f.bin = bin
+		return f
 	}
 	build := exec.Command("go", "build", "-buildvcs=false", "-o", f.bin, "../../cmd/csi-driver-rclone")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr

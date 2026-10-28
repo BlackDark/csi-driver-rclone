@@ -31,11 +31,24 @@ docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor=u
   go test -tags fuse_integration -run TestFuse -count=1 -v ./internal/rclonemount/
 '''
 
+[tasks."test:fuse:host"]
+description = "test:fuse on a Linux host with passwordless sudo (CI): compiles as the user, runs as root"
+run = '''
+set -euo pipefail
+out="$(mktemp -d)"
+chmod 755 "$out" # the Mount Pod uid execs the binary
+trap 'sudo rm -rf "$out"' EXIT
+go build -o "$out/csi-driver-rclone" ./cmd/csi-driver-rclone
+go test -c -tags fuse_integration -o "$out/rclonemount.test" ./internal/rclonemount/
+cd internal/rclonemount
+sudo FUSE_IT_BIN="$out/csi-driver-rclone" "$out/rclonemount.test" -test.run TestFuse -test.count=1 -test.v
+'''
+
 [tasks.e2e]
 description = "kind + MinIO e2e: bring up cluster, install chart, run test/e2e"
 run = [
   "bash hack/e2e/up.sh",
-  "go test -tags e2e -count=1 -v -timeout 25m ./test/e2e/",
+  "go test -tags e2e -count=1 -v -parallel 16 -timeout 25m ./test/e2e/",
 ]
 
 [tasks."e2e:down"]
