@@ -15,6 +15,11 @@ func resolveRemote(secrets, ctx map[string]string, volumeID string) (Remote, err
 	if err != nil {
 		return Remote{}, err
 	}
+	if isEncrypted(configData) {
+		if configData, err = decryptConfig(configData, secrets[KeyConfigPassword]); err != nil {
+			return Remote{}, err
+		}
+	}
 	names, err := sectionNames(configData)
 	if err != nil {
 		return Remote{}, err
