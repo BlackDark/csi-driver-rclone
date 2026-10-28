@@ -162,7 +162,7 @@ func runMC(ctx context.Context, cs kubernetes.Interface, args ...string) (string
 			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyNever,
 				Containers: []corev1.Container{{
-					Name: "mc", Image: mcImage, Args: args,
+					Name: "mc", Image: mcImage, Args: args, ImagePullPolicy: corev1.PullIfNotPresent,
 					Env: []corev1.EnvVar{{Name: "HOME", Value: "/tmp"}, {Name: "MC_HOST_e2e", Value: mcHost}},
 				}},
 			}},
