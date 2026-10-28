@@ -34,9 +34,11 @@ type tokenHook struct {
 	now      func() time.Time
 
 	lockTimeout time.Duration // bound on waiting for the lock
-	holdTimeout time.Duration // lock released if rclone never saves
+	// holdTimeout releases a lock rclone never saves after; it matches the node
+	// plugin's Lease MaxHold, far beyond rclone's own HTTP timeouts for a refresh.
+	holdTimeout time.Duration
 
-	lockMu sync.Mutex // serializes lock requests; never held by push
+	lockMu map[string]*sync.Mutex // per section: serializes lock requests; never held by push
 	mu     sync.Mutex
 	locker tokenLocker
 	held   map[string]*time.Timer // by isolated section
@@ -45,11 +47,13 @@ type tokenHook struct {
 func newTokenHook(tokens []mountspec.TokenSection, log *slog.Logger) *tokenHook {
 	h := &tokenHook{
 		original: map[string]string{}, isolated: map[string]string{}, held: map[string]*time.Timer{},
-		log: log, now: time.Now, lockTimeout: time.Minute, holdTimeout: time.Minute,
+		lockMu: map[string]*sync.Mutex{},
+		log:    log, now: time.Now, lockTimeout: time.Minute, holdTimeout: 2 * time.Minute,
 	}
 	for _, ts := range tokens {
 		h.original[ts.Isolated] = ts.Section
 		h.isolated[ts.Section] = ts.Isolated
+		h.lockMu[ts.Isolated] = &sync.Mutex{}
 	}
 	return h
 }
@@ -72,8 +76,8 @@ func (h *tokenHook) getValue(section, key string) (string, bool) {
 	if !managed || key != mountspec.KeyToken || h.valid(v) {
 		return v, ok
 	}
-	h.lockMu.Lock()
-	defer h.lockMu.Unlock()
+	h.lockMu[section].Lock()
+	defer h.lockMu[section].Unlock()
 	if v, ok = h.get(section, key); h.valid(v) {
 		return v, ok // pushed while we waited
 	}

@@ -180,3 +180,46 @@ func TestParseTokenArg(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenLockWhilePendingIsDenied(t *testing.T) {
+	h := &fakeTokens{gotLock: make(chan struct{}, 2), lockWait: make(chan struct{})}
+	s, _ := tokenSession(t, h, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { <-h.gotLock; cancel() }()
+	if _, err := s.LockToken(ctx, "a"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := s.LockToken(context.Background(), "a"); !errors.Is(err, ErrTokenDenied) {
+		t.Fatalf("retry while the first lock waits: %v", err)
+	}
+	close(h.lockWait)
+	waitFor(t, func() bool { unlocks, _, _ := h.snapshot(); return len(unlocks) == 1 })
+}
+
+func TestUnsavedTokenResentAfterReconnect(t *testing.T) {
+	r, _ := pipe(t)
+	path := sockPath(t)
+	h := &fakeTokens{}
+	events, cancel, done := startServer(t, ServerConfig{SockPath: path, FD: int(r.Fd()), Mode: ModeFresh, Tokens: h})
+	c := dial(t, path)
+	fd, err := c.ReceiveFD()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.NewFile(uintptr(fd), "fd").Close()
+	next(t, events, EventFDSent)
+	s := NewSession(path, c, 20*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go s.Run(ctx)
+	cancel()
+	<-done
+	waitFor(t, func() bool { return s.current() == nil })
+	if err := s.SaveToken("a", "fresh"); err == nil {
+		t.Fatal("save without a connection reported success")
+	}
+	h2 := &fakeTokens{}
+	events2, _, _ := startServer(t, ServerConfig{SockPath: path, Mode: ModeAdopt, Tokens: h2})
+	next(t, events2, EventAdopted)
+	waitFor(t, func() bool { _, saved, _ := h2.snapshot(); return len(saved) == 1 && saved[0] == "a=fresh" })
+}

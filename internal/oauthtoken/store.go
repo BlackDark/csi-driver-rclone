@@ -5,6 +5,7 @@ package oauthtoken
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -29,8 +30,18 @@ const (
 	saveRetries       = 5
 )
 
-// Name is the Token Secret and Lease name for a seed hash.
+// Name is the Token Secret and Lease name for a seed hash; see validSeedHash.
 func Name(seedHash string) string { return namePrefix + seedHash[:32] }
+
+// validSeedHash: a hex sha256, as mountspec.HashToken writes it. spec.json is read
+// back on adoption, so a broken file must not reach Name.
+func validSeedHash(h string) bool {
+	if len(h) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(h)
+	return err == nil
+}
 
 // Selector selects every Token Secret.
 func Selector() string {

@@ -35,9 +35,15 @@ func tokenSections(configData string, rename map[string]string) []TokenSection {
 	return out
 }
 
-// blankTokens empties every token value, so a refreshed token keeps the Identity.
+// blankTokens replaces every set token value with a marker, so a refreshed token
+// keeps the Identity while a token appearing in an empty section changes it.
 func blankTokens(configData string) string {
-	return eachToken(configData, func(string, string) string { return "" })
+	return eachToken(configData, func(_, v string) string {
+		if v == "" {
+			return ""
+		}
+		return "set"
+	})
 }
 
 // SetToken replaces the token value of section; other lines stay byte for byte.

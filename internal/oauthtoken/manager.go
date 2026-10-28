@@ -107,12 +107,21 @@ func (m *Manager) Handler(id string, tokens []mountspec.TokenSection) handoff.To
 	}
 	h := &mountHandler{m: m, id: id, sections: map[string]mountspec.TokenSection{}, held: map[string]func(){}}
 	for _, ts := range tokens {
+		if !validSeedHash(ts.SeedHash) {
+			m.Log.Warn("token write-back: ignoring section with a malformed seed hash", "section", ts.Section, "id", id)
+			continue
+		}
 		h.sections[ts.Section] = ts
 	}
 	return h
 }
 
 var errUnknownSection = errors.New("token write-back: unknown section")
+
+const (
+	readWait  = 10 * time.Second // one Token Secret read or write
+	saveTries = 5
+)
 
 // mountHandler is the handoff.TokenHandler of one mount.
 type mountHandler struct {
@@ -129,13 +138,23 @@ func (h *mountHandler) Lock(ctx context.Context, section string) (string, error)
 	if !ok {
 		return "", errUnknownSection
 	}
-	ctx, cancel := context.WithTimeout(ctx, h.m.LockWait)
+	// LockWait plus readWait stays below the Mount Pod's own lock timeout.
+	actx, cancel := context.WithTimeout(ctx, h.m.LockWait)
 	defer cancel()
 	start := h.m.Locker.Clock.Now()
-	release, err := h.m.Locker.Acquire(ctx, Name(ts.SeedHash), h.m.Node+"/"+h.id+"/"+ts.SeedHash[:8])
+	// The section is part of the holder: two sections on one grant are two refreshers.
+	release, err := h.m.Locker.Acquire(actx, Name(ts.SeedHash), h.m.Node+"/"+h.id+"/"+section)
 	h.m.observeLockWait(h.m.Locker.Clock.Since(start))
 	if err != nil {
 		h.m.Log.Warn("token write-back: no refresh lock", "section", section, "id", h.id, "err", err)
+		return "", err
+	}
+	rctx, rcancel := context.WithTimeout(ctx, readWait)
+	defer rcancel()
+	token, err := h.m.Store.Get(rctx, ts.SeedHash)
+	if err != nil {
+		release()
+		h.m.Log.Warn("token write-back: read token", "section", section, "err", err)
 		return "", err
 	}
 	h.mu.Lock()
@@ -144,10 +163,6 @@ func (h *mountHandler) Lock(ctx context.Context, section string) (string, error)
 	}
 	h.held[section] = release
 	h.mu.Unlock()
-	token, err := h.m.Store.Get(ctx, ts.SeedHash)
-	if err != nil {
-		h.m.Log.Warn("token write-back: read token", "section", section, "err", err)
-	}
 	return token, nil
 }
 
@@ -161,22 +176,38 @@ func (h *mountHandler) Unlock(section string) {
 	}
 }
 
+// Save writes the token, retrying API failures, then releases the lock: other
+// refreshers must not start before the new token is stored.
 func (h *mountHandler) Save(ctx context.Context, section, token string) error {
 	defer h.Unlock(section)
 	ts, ok := h.sections[section]
 	if !ok {
 		return errUnknownSection
 	}
-	ctx, cancel := context.WithTimeout(ctx, h.m.LockWait)
-	defer cancel()
-	res, err := h.m.Store.Save(ctx, section, ts.SeedHash, token)
+	res, err := h.saveRetrying(ctx, section, ts.SeedHash, token)
 	h.m.observeSave(res)
 	if err != nil {
-		h.m.Log.Warn("token write-back failed", "section", section, "id", h.id, "err", err)
 		return err
 	}
 	h.m.Log.Info("token write-back", "section", section, "id", h.id, "result", res)
 	return nil
+}
+
+func (h *mountHandler) saveRetrying(ctx context.Context, section, seedHash, token string) (SaveResult, error) {
+	for try := 1; ; try++ {
+		sctx, cancel := context.WithTimeout(ctx, readWait)
+		res, err := h.m.Store.Save(sctx, section, seedHash, token)
+		cancel()
+		if err == nil || try == saveTries {
+			return res, err
+		}
+		h.m.Log.Warn("token write-back failed, retrying", "section", section, "id", h.id, "try", try, "err", err)
+		select {
+		case <-ctx.Done():
+			return res, err
+		case <-h.m.Locker.Clock.After(time.Duration(try) * time.Second):
+		}
+	}
 }
 
 func (h *mountHandler) Subscribe(push func(section, token string)) func() {

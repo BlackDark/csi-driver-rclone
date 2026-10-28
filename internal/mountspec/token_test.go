@@ -113,3 +113,12 @@ func TestSpecFileKeepsTokens(t *testing.T) {
 		t.Fatalf("got %+v %v", got.Tokens, err)
 	}
 }
+
+func TestIdentityChangesWhenTokenAppears(t *testing.T) {
+	empty := strings.Replace(oauthConfig, `token = {"refresh_token":"r1"}`, "token = ", 1)
+	a, _ := Resolve(oauthInput(empty, nil))
+	b, _ := Resolve(oauthInput(oauthConfig, nil))
+	if a.Identity == b.Identity {
+		t.Error("a token appearing kept the identity")
+	}
+}

@@ -62,9 +62,14 @@ func (t *tokenConn) handle(ctx context.Context, m Message, arg string) error {
 	switch m {
 	case MsgTokenLock:
 		t.mu.Lock()
+		busy := t.pending[section]
 		t.pending[section] = true
-		delete(t.canceled, section)
 		t.mu.Unlock()
+		if busy {
+			// A canceled request still waits; its grant would answer this one.
+			t.write(MsgTokenDeny, tokenArg(section))
+			return nil
+		}
 		go t.lock(ctx, section)
 	case MsgTokenUnlock:
 		if t.release(section) {
@@ -72,7 +77,8 @@ func (t *tokenConn) handle(ctx context.Context, m Message, arg string) error {
 		}
 	case MsgTokenSave:
 		t.release(section)
-		go func() { _ = t.h.Save(ctx, section, token) }()
+		// Not the connection's ctx: a closing Mount Pod must not lose its refreshed token.
+		go func() { _ = t.h.Save(context.WithoutCancel(ctx), section, token) }()
 	}
 	return nil
 }

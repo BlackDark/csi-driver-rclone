@@ -26,6 +26,7 @@ type tokenState struct {
 	mu       sync.Mutex
 	listener TokenListener
 	pending  map[string]chan lockReply
+	unsaved  map[string]string // saves that found no connection, resent after reconnect
 }
 
 func (t *tokenState) failPending() {
@@ -88,9 +89,19 @@ func (s *Session) UnlockToken(section string) error {
 	return s.sendArg(MsgTokenUnlock, tokenArg(section))
 }
 
-// SaveToken reports a refreshed token; it also releases the lock.
+// SaveToken reports a refreshed token; it also releases the lock. Without a
+// connection the token is kept and sent after the next reconnect.
 func (s *Session) SaveToken(section, token string) error {
-	return s.sendArg(MsgTokenSave, tokenArg(section, token))
+	err := s.sendArg(MsgTokenSave, tokenArg(section, token))
+	if err != nil {
+		s.tokens.mu.Lock()
+		if s.tokens.unsaved == nil {
+			s.tokens.unsaved = map[string]string{}
+		}
+		s.tokens.unsaved[section] = token
+		s.tokens.mu.Unlock()
+	}
+	return err
 }
 
 func (s *Session) sendArg(m Message, arg string) error {
@@ -102,17 +113,24 @@ func (s *Session) sendArg(m Message, arg string) error {
 	return s.conn.send(m, arg)
 }
 
+// subscribeTokens starts token pushes on a new connection and resends unsaved tokens.
 func (s *Session) subscribeTokens(conn *Conn) {
 	s.tokens.mu.Lock()
 	watching := s.tokens.listener != nil
+	unsaved := s.tokens.unsaved
+	s.tokens.unsaved = nil
 	s.tokens.mu.Unlock()
-	if !watching {
-		return
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := conn.send(MsgTokenSubscribe, ""); err != nil {
-		s.log.Warn("subscribe to token updates", "err", err)
+	if watching {
+		if err := conn.send(MsgTokenSubscribe, ""); err != nil {
+			s.log.Warn("subscribe to token updates", "err", err)
+		}
+	}
+	for section, token := range unsaved {
+		if err := conn.send(MsgTokenSave, tokenArg(section, token)); err != nil {
+			s.log.Warn("resend refreshed token", "section", section, "err", err)
+		}
 	}
 }
 

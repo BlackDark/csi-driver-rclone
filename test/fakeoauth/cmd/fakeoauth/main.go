@@ -16,7 +16,13 @@ func main() {
 	ttl := flag.Duration("ttl", 20*time.Second, "access token lifetime")
 	initial := flag.String("initial-refresh", "", "comma-separated refresh tokens accepted once each")
 	flag.Parse()
-	s := fakeoauth.New(*ttl, strings.Split(*initial, ",")...)
+	var seeds []string
+	for _, r := range strings.Split(*initial, ",") {
+		if r != "" {
+			seeds = append(seeds, r)
+		}
+	}
+	s := fakeoauth.New(*ttl, seeds...)
 	srv := &http.Server{Addr: *addr, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }

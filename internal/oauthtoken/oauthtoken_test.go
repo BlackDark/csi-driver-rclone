@@ -268,3 +268,42 @@ func TestManagerHandlerFlow(t *testing.T) {
 		t.Fatalf("unknown section %v", err)
 	}
 }
+
+func TestHandlerSkipsMalformedSeedHash(t *testing.T) {
+	m := manager(fake.NewClientset())
+	h := m.Handler("a", []mountspec.TokenSection{{Section: "box", Isolated: "box_1", SeedHash: "short"}})
+	if _, err := h.Lock(context.Background(), "box"); !errors.Is(err, errUnknownSection) {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestLockReleasesLeaseWhenReadFails(t *testing.T) {
+	cs := fake.NewClientset()
+	m := manager(cs)
+	h := m.Handler("a", []mountspec.TokenSection{{Section: "box", Isolated: "box_1", SeedHash: seedHash}})
+	cs.PrependReactor("get", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("api down")
+	})
+	if _, err := h.Lock(context.Background(), "box"); err == nil {
+		t.Fatal("lock succeeded without a token read")
+	}
+	l, _ := cs.CoordinationV1().Leases(ns).Get(context.Background(), Name(seedHash), metav1.GetOptions{})
+	if ptr.Deref(l.Spec.HolderIdentity, "") != "" {
+		t.Fatal("lease still held")
+	}
+}
+
+func TestTwoSectionsOnOneGrantAreTwoHolders(t *testing.T) {
+	cs := fake.NewClientset()
+	m := manager(cs)
+	h := m.Handler("a", []mountspec.TokenSection{
+		{Section: "box", Isolated: "box_1", SeedHash: seedHash},
+		{Section: "box2", Isolated: "box2_1", SeedHash: seedHash},
+	})
+	if _, err := h.Lock(context.Background(), "box"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Lock(context.Background(), "box2"); err == nil {
+		t.Fatal("second section got the lease the first holds")
+	}
+}

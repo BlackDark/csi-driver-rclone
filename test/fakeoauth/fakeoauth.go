@@ -53,8 +53,13 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /token", s.token)
 	mux.HandleFunc("GET /seed", func(w http.ResponseWriter, r *http.Request) {
+		rt := r.URL.Query().Get("refresh")
+		if rt == "" {
+			writeJSON(w, 400, map[string]string{"error": "refresh missing"})
+			return
+		}
 		s.mu.Lock()
-		s.refresh[r.URL.Query().Get("refresh")] = true
+		s.refresh[rt] = true
 		s.mu.Unlock()
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
@@ -76,7 +81,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rt := r.PostForm.Get("refresh_token")
-	if !s.refresh[rt] {
+	if rt == "" || !s.refresh[rt] {
 		s.stats.InvalidGrant++
 		writeJSON(w, 400, map[string]string{"error": "invalid_grant", "error_description": "refresh token reused or unknown"})
 		return
@@ -100,7 +105,7 @@ func (s *Server) api(body func(*http.Request) any) http.HandlerFunc {
 		access := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		s.mu.Lock()
 		exp, ok := s.access[access]
-		valid := ok && s.Now().Before(exp.Add(5*time.Second))
+		valid := ok && s.Now().Before(exp)
 		s.stats.APICalls++
 		if !valid {
 			s.stats.RejectedAccess++

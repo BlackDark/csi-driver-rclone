@@ -26,17 +26,28 @@ func fakeOAuthGet(ctx context.Context, cs kubernetes.Interface, path string, par
 	return cs.CoreV1().Services("fakeoauth").ProxyGet("http", "fakeoauth", "8080", path, params).DoRaw(ctx)
 }
 
+// fakeOAuthStats retries transient proxy errors; a malformed answer fails the test.
 func fakeOAuthStats(ctx context.Context, t *testing.T, cs kubernetes.Interface) fakeoauth.Stats {
 	t.Helper()
-	b, err := fakeOAuthGet(ctx, cs, "/stats", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	var b []byte
+	poll(ctx, t, "fake OAuth stats", func() (bool, error) {
+		var err error
+		b, err = fakeOAuthGet(ctx, cs, "/stats", nil)
+		return err == nil, nil
+	})
 	var st fakeoauth.Stats
 	if err := json.Unmarshal(b, &st); err != nil {
 		t.Fatal(err)
 	}
 	return st
+}
+
+func logCount(ctx context.Context, cs kubernetes.Interface, name, want string) int {
+	b, err := cs.CoreV1().Pods(appNS).GetLogs(name, &corev1.PodLogOptions{}).DoRaw(ctx)
+	if err != nil {
+		return -1
+	}
+	return strings.Count(string(b), want)
 }
 
 // oauthSecret creates a Credential Secret for a HiDrive remote on the fake server
@@ -110,9 +121,14 @@ func TestOAuthTokenWriteBack(t *testing.T) {
 
 	mustCreatePod(ctx, t, cs, lister("e2e-oauth-b", "e2e-oauth-b"))
 	waitLogContains(ctx, t, cs, appNS, "e2e-oauth-b", "listed-ok")
+	listedA, listedB := logCount(ctx, cs, "e2e-oauth-a", "listed-ok"), logCount(ctx, cs, "e2e-oauth-b", "listed-ok")
 	// ttl 20s: rclone refreshes about every 10s; both Mount Pods share one token.
 	waitRefreshes(ctx, t, cs, base.Refreshes+6)
-	t.Log("two Mount Pods sharing one Credential Secret refreshed several times")
+	// Both kept listing across several expiries: each got a token, refreshed itself or pushed.
+	poll(ctx, t, "both listers still listing", func() (bool, error) {
+		return logCount(ctx, cs, "e2e-oauth-a", "listed-ok") > listedA+10 && logCount(ctx, cs, "e2e-oauth-b", "listed-ok") > listedB+10, nil
+	})
+	t.Log("two Mount Pods sharing one Credential Secret kept working across several refreshes")
 
 	deletePod(ctx, t, cs, "e2e-oauth-a")
 	deletePod(ctx, t, cs, "e2e-oauth-b")
