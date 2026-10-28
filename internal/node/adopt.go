@@ -66,7 +66,7 @@ func scanNode(pods []corev1.Pod, infos []mount.MountInfo, kubeletDir string) []n
 	}
 	podsDir := filepath.Join(kubeletDir, "pods") + string(filepath.Separator)
 	for _, mi := range infos {
-		if id, ok := devs[[2]int{mi.Major, mi.Minor}]; ok && strings.HasPrefix(mi.MountPoint, podsDir) {
+		if id, ok := devs[[2]int{mi.Major, mi.Minor}]; ok && isPublishTarget(mi.MountPoint, podsDir) {
 			get(id).targets = append(get(id).targets, mi.MountPoint)
 		}
 	}
@@ -77,6 +77,17 @@ func scanNode(pods []corev1.Pod, infos []mount.MountInfo, kubeletDir string) []n
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
 	return out
+}
+
+// isPublishTarget matches kubelet's CSI target <pods>/<uid>/volumes/kubernetes.io~csi/<name>/mount,
+// not the volume-subpaths binds kubelet makes (and removes) itself for subPath mounts.
+func isPublishTarget(mountPoint, podsDir string) bool {
+	rest, ok := strings.CutPrefix(mountPoint, podsDir)
+	if !ok {
+		return false
+	}
+	parts := strings.Split(rest, string(filepath.Separator))
+	return len(parts) == 5 && parts[1] == "volumes" && parts[2] == "kubernetes.io~csi" && parts[4] == "mount"
 }
 
 // Adopt rebuilds the plugin's state after a restart, before it serves CSI calls: live

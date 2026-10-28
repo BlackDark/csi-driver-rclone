@@ -30,6 +30,8 @@ func TestScanNodeMatchesBindsByDevice(t *testing.T) {
 	infos := []mount.MountInfo{
 		{Major: 0, Minor: 50, MountPoint: mountpod.FuseDir(kd, "aaa")},
 		{Major: 0, Minor: 50, MountPoint: "/k/pods/u1/volumes/kubernetes.io~csi/pv/mount"},
+		// subPath binds are kubelet's, unmounted with the pod; never publish targets.
+		{Major: 0, Minor: 50, MountPoint: "/k/pods/u1/volume-subpaths/pv/app/0"},
 		{Major: 0, Minor: 51, MountPoint: mountpod.FuseDir(kd, "bbb")},
 		{Major: 0, Minor: 52, MountPoint: "/k/pods/u2/volumes/kubernetes.io~csi/other/mount"},
 		{Major: 0, Minor: 50, MountPoint: "/elsewhere"},
