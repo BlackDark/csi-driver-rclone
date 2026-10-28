@@ -32,6 +32,19 @@
     automerge: true,
   },
 
+  // Pinned `image:tag@sha256:…` refs outside the built-in managers: e2e Go constants, e2e manifests.
+  customManagers: [
+    {
+      customType: "regex",
+      description: "Pinned image refs in e2e Go code and manifests",
+      managerFilePatterns: ["/^test/e2e/.+\\.go$/", "/^hack/e2e/.+\\.ya?ml$/"],
+      matchStrings: [
+        "(?<depName>[a-z0-9][a-z0-9./-]*[a-z0-9]):(?<currentValue>[\\w][\\w.-]*)@(?<currentDigest>sha256:[a-f0-9]{64})",
+      ],
+      datasourceTemplate: "docker",
+    },
+  ],
+
   // Later rules override earlier ones: general first, specific after.
   packageRules: [
     {
@@ -77,6 +90,30 @@
       matchUpdateTypes: ["major"],
       addLabels: ["major"],
       automerge: false,
+    },
+    {
+      description: "Own image: chart tag defaults to appVersion, the release bumps it",
+      matchPackageNames: ["ghcr.io/blackdark/csi-driver-rclone"],
+      enabled: false,
+    },
+    {
+      // Chainguard's free tier publishes only `latest`; track its digest.
+      description: "Chainguard images: digest updates of the latest tag",
+      matchPackageNames: ["cgr.dev/chainguard/**"],
+      versioning: "docker",
+      pinDigests: true,
+    },
+    {
+      // rclone v1.75 requires it and parses rclone.conf with it; our direct use keeps
+      // configData quoting identical to rclone's. Goes when rclone drops it.
+      description: "goconfig: unmaintained but rclone's own config parser",
+      matchPackageNames: ["github.com/unknwon/goconfig"],
+      abandonmentThreshold: null,
+    },
+    {
+      description: "shellcheck: slow release cadence, still the standard shell linter",
+      matchPackageNames: ["shellcheck"],
+      abandonmentThreshold: null,
     },
   ],
 }
