@@ -31,6 +31,7 @@ All series also come with the Go runtime and process collectors (`go_*`, `proces
 | `csi_rclone_drain_total` | counter | `result` | Mount Pod stops: `drained`, `timeout` (uploads left in the Cache, also a `DrainTimeout` Event), `gone` (exited without a report, e.g. lost) |
 | `csi_rclone_mount_lost_total` | counter | | Mount Pods that stopped without the plugin asking (also a `MountLost` Event) |
 | `csi_rclone_adoptions_total` | counter | `result` | Mounts found when the node plugin starts: `adopted` or `cleaned` (not adoptable, removed) |
+| `csi_rclone_workload_heals_total` | counter | `result` | Workload pods handled by healing after a lost Mount Pod (`mountPod.healWorkloads`): `evicted`, `skipped` (no controller), `blocked` (PDB or API error) |
 
 The node is the scrape target's `node` label (added by the ServiceMonitor relabeling).
 
@@ -60,12 +61,14 @@ The `vfs_dir_cache_*` series appear once the mount is up; the `vfs_cache_*` and 
 
 ## Events
 
-The node plugin records Warning Events on the Mount Pod and the workload pod (via `podInfoOnMount`):
+The node plugin records Events (Warning unless noted) on the Mount Pod and the workload pod (via `podInfoOnMount`):
 
 | Reason | When |
 |---|---|
 | `MountLost` | A Mount Pod stopped unasked, or was lost across a node plugin restart |
 | `DrainTimeout` | A stopping Mount Pod did not drain its uploads within `mountPod.drainTimeout` |
+| `WorkloadHealed` | Normal: workload pod evicted after its Mount Pod was lost (`mountPod.healWorkloads`) |
+| `HealBlocked` | Healing did not evict the workload pod: no controller, PDB still blocking after 5 minutes, or an API error |
 | `UnrestrictedOptions` | A publish uses Unrestricted Options (`allowAllOptions`), on the workload pod |
 
 Mount failures reach the workload pod as kubelet's `FailedMount` Event carrying the CSI error.
@@ -79,4 +82,4 @@ Mount failures reach the workload pod as kubelet's `FailedMount` Event carrying 
 | `metrics.podMonitor.enabled` | `false` | PodMonitor for the Mount Pods |
 | `metrics.dashboard.enabled` | `false` | ConfigMap with the Grafana dashboard, labelled `grafana_dashboard: "1"` for the Grafana sidecar |
 
-ServiceMonitor and PodMonitor need the Prometheus Operator CRDs; the chart fails to render without them. The dashboard is `charts/csi-driver-rclone/dashboards/csi-driver-rclone.json`: RPC rate, errors and latency, Mount Pods by state and image, mount health, drain outcomes, lost mounts and adoptions, and per volume throughput, errors, Cache use and the upload queue.
+ServiceMonitor and PodMonitor need the Prometheus Operator CRDs; the chart fails to render without them. The dashboard is `charts/csi-driver-rclone/dashboards/csi-driver-rclone.json`: RPC rate, errors and latency, Mount Pods by state and image, mount health, drain outcomes, lost mounts, adoptions and workload heals, and per volume throughput, errors, Cache use and the upload queue.

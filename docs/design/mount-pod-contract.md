@@ -51,7 +51,7 @@ After the handshake the client sends `ready`, `drained` or `drain-timeout`; the 
 - Node plugin restart (pod deletion, DaemonSet rollout, `helm upgrade`): running mounts are kept; their state comes from the cluster and the node. Before serving CSI calls, the plugin lists its Mount Pods on this node (label `rclone.csi.blackdark.github.io/node`) and reads `/proc/self/mountinfo`. A mount on `mounts/<id>/fuse` belongs to `<id>`. Its users are the CSI targets `<kubelet>/pods/<uid>/volumes/kubernetes.io~csi/<name>/mount` with the same `major:minor`: a bind shares the device of the fuse superblock. kubelet's own `volume-subpaths` binds share it too but are not users; kubelet removes them with the pod.
   - Adoption never compares the Mount Pod image with `--mount-image`, nor its resources with `--mount-resources`: both are node-wide, outside the Mount Spec Identity. An adopted Mount Pod keeps its image until it is released; the next Mount Pod for `<id>` gets the new one ([upgrades](../operations.md#upgrades)).
   - Adopted: `fuse/` is mounted and answers `statfs`, and the Mount Pod is alive (not terminating, not Failed or Succeeded). The plugin serves `handoff.sock` in adopt mode, and the Mount Pod reconnects and sends `adopt`. Users are rebuilt from the binds, their workload pod refs from the `users` annotation, and the Mount Spec from `spec.json` in the owned Secret. So a later crash is recreated at once and reported to the workload pods. A mount without users starts a fresh Linger. A missing or unreadable Secret leaves the spec unknown; then a crash is recreated by the next publish.
-  - Cleaned up: anything else, such as a dead `fuse/`, a Pod without a mount, or a terminating or failed Pod. The plugin lazily unmounts `fuse/`, deletes the Pod and Secret, and removes the dirs. The binds of a dead mount are reported Inaccessible until kubelet unpublishes them, and their workload pods (from the `users` annotation, when the Pod still exists) get a `MountLost` Event.
+  - Cleaned up: anything else, such as a dead `fuse/`, a Pod without a mount, or a terminating or failed Pod. The plugin lazily unmounts `fuse/`, deletes the Pod and Secret, and removes the dirs. The binds of a dead mount are reported Inaccessible until kubelet unpublishes them, and their workload pods (from the `users` annotation, when the Pod still exists) get a `MountLost` Event. With `--heal-workloads` they are evicted too; the spec is unknown here, so their replacement's publish recreates the Mount Pod.
 - A publish that finds no live mount for `<id>` lazily unmounts any leftover mount on `fuse/` (one whose Mount Pod is gone) before mounting afresh.
 - Mount Pod lost: the handoff connection closes without `drained`, or the Pod watch sees the Mount Pod Failed, Succeeded or deleted while the plugin did not stop it. The plugin:
   1. marks every target of `<id>` dead,
@@ -59,8 +59,20 @@ After the handshake the client sends `ready`, `drained` or `drain-timeout`; the 
   3. deletes the Pod, waits for its drain result or EOF, unmounts `fuse/`, and deletes the Secret,
   4. if targets remain, waits until the Pod name is free and recreates the Mount Pod with a fresh fd, so new publishes work.
 
+  5. with `--heal-workloads`, evicts each target's workload pod ([workload healing](#workload-healing)), after step 4 or once it gave up.
+
   The old binds point at the dead connection and return `ENOTCONN` until their pod restarts. A FUSE connection cannot be resumed by a new rclone (ADR 0003).
 - Health: `NodeGetVolumeHealth` reports a dead target, or one whose `statfs` returns `ENOTCONN`, as `INACCESSIBLE` with reason `MountPodLost`. Kubelet writes that to `pod.status.volumeHealth` (feature gate `CSIVolumeHealth`). `NodeGetVolumeStats` returns statfs usage, or `Unavailable` for `ENOTCONN`. CSI 1.13 replaced `VOLUME_CONDITION` with `GET_VOLUME_HEALTH`.
 - Publish is idempotent: a target that already is a healthy mount of a live `<id>` returns OK. A target that is a dead mount is unmounted and bound again. A Mount Pod that is not `ready` within `--publish-timeout` fails the publish with `DeadlineExceeded`, and the Pod, Secret, `fuse/` and handoff server are removed.
 - The Mount Pod name stays the same as long as the spec has not changed. A changed spec gets a new `<id>`, and so a new Mount Pod, but only after the old `<id>` is released (Cache exclusivity, step 1).
 - Inline Volumes: kubelet generates the volume ID per pod and volume (`csi-<hash>`), so every pod gets its own `<id>`, Mount Pod and Cache; Inline Volumes are never shared across pods.
+
+## Workload healing
+
+Opt-in with `--heal-workloads` (chart `mountPod.healWorkloads.enabled`). For each workload pod of a lost mount, in the background and outside the `<id>` lock:
+
+1. get the pod; skip it when gone, terminating, or its UID differs from the one recorded at publish (already replaced),
+2. no controller ownerReference (bare pod): Warning `HealBlocked`, not evicted,
+3. else create a `policy/v1` Eviction with a UID precondition. A PodDisruptionBudget refusal (429) is retried with backoff from 1s, doubling to 30s, for up to 5 minutes, then Warning `HealBlocked`. NotFound or Conflict means already replaced. Success: Normal `WorkloadHealed`.
+
+Each outcome counts in `csi_rclone_workload_heals_total{result=evicted|skipped|blocked}`.

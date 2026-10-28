@@ -22,6 +22,20 @@ memory ≈ base + open files × buffer-size + backend upload buffers + directory
 
 Example: 20 open files at the default 16Mi buffer, S3 defaults and 100k cached entries: 100Mi + 320Mi + 80Mi + 100Mi ≈ 600Mi. Check against the Mount Pod's actual working set (`container_memory_working_set_bytes`) under load.
 
+## Workload healing
+
+Off by default. A lost Mount Pod leaves its workload pods with a dead mount (`ENOTCONN`) until they restart (ADR 0003). `mountPod.healWorkloads.enabled=true` (node flag `--heal-workloads`) makes the node plugin evict them once the replacement Mount Pod is ready, so their controller recreates them and they mount at once. Mechanics: [contract](design/mount-pod-contract.md#workload-healing).
+
+- Only pods with a controller ownerReference (ReplicaSet, StatefulSet, DaemonSet, Job, …) are evicted. Bare pods get a `HealBlocked` Event and must be restarted by hand.
+- Eviction goes through the Eviction API, so PodDisruptionBudgets apply. A blocking PDB is retried for up to 5 minutes, then `HealBlocked`.
+- The UID recorded at publish is a precondition: a pod recreated under the same name is never evicted.
+
+Risks:
+- Eviction ends the pod: in-flight work is lost, as with any restart, and a Job pod may count as a failure toward `backoffLimit`.
+- A Mount Pod that keeps crashing (bad config, OOM kill under a memory limit) turns into repeated evictions of its workload pods. Watch `csi_rclone_workload_heals_total` and `csi_rclone_mount_lost_total`.
+- A StatefulSet pod with a single replica and a PDB of `minAvailable: 1` is never evicted; it gets `HealBlocked`.
+- RBAC: the node plugin gains cluster-wide pods `get` and `pods/eviction` `create`. A compromised node plugin, already privileged on its node, could then evict pods anywhere in the cluster.
+
 ## Upgrades
 
 A Mount Pod's image is fixed for its lifetime. The image is not part of the Mount Spec Identity, so a new driver image never makes an existing Mount Pod stale.

@@ -27,7 +27,7 @@ Works:
 - Any rclone backend, nested remotes (crypt over OneDrive, union) and encrypted configs (`configData` + `configPassword`).
 - ReadWriteMany across nodes, with one Mount Pod and Cache per node.
 - Cache on hostPath (default, survives Mount Pod replacement) or any volume source (`cacheVolume`).
-- Upload drain on stop, bounded by a timeout. A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted ([ADR 0003](docs/adr/0003-mount-pod-crash-recovery.md)).
+- Upload drain on stop, bounded by a timeout. A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted ([ADR 0003](docs/adr/0003-mount-pod-crash-recovery.md)), or are evicted for their controller to recreate with `mountPod.healWorkloads.enabled` ([healing](docs/operations.md#workload-healing)).
 - Prometheus metrics for every component, with optional ServiceMonitor, PodMonitor and Grafana dashboard ([metrics](docs/reference/metrics.md)).
 
 Does not work, by design:
@@ -165,7 +165,7 @@ Moving from a host systemd `rclone mount`: [migration guide](docs/guides/migrate
 
 ## Limitations
 
-- A crashed or OOM-killed Mount Pod ends the mount for the pods using it; they must be restarted. There is no default memory limit for that reason.
+- A crashed or OOM-killed Mount Pod ends the mount for the pods using it; they must be restarted, or opt into workload healing. There is no default memory limit for that reason.
 - Writes held by `vfs-write-back` are only on the node's Cache until uploaded; other nodes see them after upload and `poll-interval`.
 - One FUSE mount has one ownership: all pods on a volume see the same `uid`, `gid` and `umask`.
 - A changed Mount Spec takes effect once the old Mount Pod on that node is released.

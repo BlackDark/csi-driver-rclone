@@ -27,3 +27,5 @@
 **Adoption**: A restarted node plugin taking over the running Mount Pods on its node. It rebuilds their users from the mount table, and each Mount Pod reconnects with `adopt`.
 
 **Mount Lost**: A Mount Pod that stopped while the node plugin did not stop it. Its binds return `ENOTCONN` until their pods restart. The plugin emits a `MountLost` Event and recreates the Mount Pod.
+
+**Heal**: Opt-in eviction of a controller-owned workload pod after its Mount Lost, so its controller recreates it and it remounts. Bare pods are not healed.
