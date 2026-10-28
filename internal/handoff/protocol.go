@@ -13,14 +13,17 @@
 //
 //	client: token-subscribe                             server: token <s> <t> on every change
 //	client: token-lock <s>       server: token-grant <s> <t> | token-deny <s>
-//	client: token-save <s> <t>                          stores the token, releases the lock
+//	client: token-save <s> <t>   server: token-saved <s> <sha256 of t> | token-save-failed <s>
+//	                                                    stores the token, releases the lock
 //	client: token-unlock <s>                            releases the lock unchanged
 //
 // The open connection is the Mount Pod's liveness signal; EOF means it is gone.
 package handoff
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -47,6 +50,10 @@ const (
 	MsgTokenGrant     Message = "token-grant"
 	MsgTokenDeny      Message = "token-deny"
 	MsgToken          Message = "token"
+	// MsgTokenSaved confirms a stored token-save; its token part is the token's sha256.
+	MsgTokenSaved Message = "token-saved"
+	// MsgTokenSaveFailed: the Token Secret write failed; the Mount Pod retries.
+	MsgTokenSaveFailed Message = "token-save-failed"
 )
 
 // Reject reasons sent by the server.
@@ -88,7 +95,8 @@ func parseLine(line string) (Message, string, error) {
 	m := Message(head)
 	switch m {
 	case MsgHello, MsgAdopt, MsgFD, MsgOK, MsgReject, MsgReady, MsgDrained, MsgDrainTimeout,
-		MsgTokenSubscribe, MsgTokenLock, MsgTokenUnlock, MsgTokenSave, MsgTokenGrant, MsgTokenDeny, MsgToken:
+		MsgTokenSubscribe, MsgTokenLock, MsgTokenUnlock, MsgTokenSave, MsgTokenGrant, MsgTokenDeny, MsgToken,
+		MsgTokenSaved, MsgTokenSaveFailed:
 		return m, arg, nil
 	}
 	return "", "", fmt.Errorf("handoff: unknown message %q", truncate(head))
@@ -110,6 +118,12 @@ func tokenArg(section string, token ...string) string {
 		parts = append(parts, b64.EncodeToString([]byte(t)))
 	}
 	return strings.Join(parts, " ")
+}
+
+// tokenHash identifies a token in token-saved without sending it back.
+func tokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // parseTokenArg decodes tokenArg; withToken requires the token part.

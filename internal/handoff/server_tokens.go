@@ -54,8 +54,12 @@ func (t *tokenConn) handle(ctx context.Context, m Message, arg string) error {
 		return err
 	}
 	if t.h == nil {
-		if m == MsgTokenLock {
+		switch m {
+		case MsgTokenLock:
 			t.write(MsgTokenDeny, tokenArg(section))
+		case MsgTokenSave:
+			// No write-back here: confirm so the Mount Pod does not retry forever.
+			t.write(MsgTokenSaved, tokenArg(section, tokenHash(token)))
 		}
 		return nil
 	}
@@ -78,7 +82,14 @@ func (t *tokenConn) handle(ctx context.Context, m Message, arg string) error {
 	case MsgTokenSave:
 		t.release(section)
 		// Not the connection's ctx: a closing Mount Pod must not lose its refreshed token.
-		go func() { _ = t.h.Save(context.WithoutCancel(ctx), section, token) }()
+		// The reply lets the Mount Pod keep the token until the Token Secret has it.
+		go func() {
+			if err := t.h.Save(context.WithoutCancel(ctx), section, token); err != nil {
+				t.write(MsgTokenSaveFailed, tokenArg(section))
+				return
+			}
+			t.write(MsgTokenSaved, tokenArg(section, tokenHash(token)))
+		}()
 	}
 	return nil
 }

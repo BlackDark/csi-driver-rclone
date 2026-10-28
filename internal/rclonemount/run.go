@@ -23,6 +23,10 @@ import (
 	"github.com/rclone/rclone/lib/atexit"
 )
 
+// tokenSaveWait bounds waiting for token-saved on stop; it stays inside the Mount
+// Pod's grace period, which only counts drain timeout and unmount wait plus 10s.
+const tokenSaveWait = 8 * time.Second
+
 // Params configure Run. Durations of zero are invalid.
 type Params struct {
 	Spec             mountspec.Spec
@@ -154,6 +158,12 @@ func stop(ctx context.Context, p Params, mp *mountlib.MountPoint, session *hando
 		p.Log.Warn("report drain result", "msg", msg, "err", err)
 	}
 	p.Log.Info("drain finished", "result", msg)
+	// A refreshed token not yet in the Token Secret would be spent for the next Mount Pod.
+	wctx, wcancel := context.WithTimeout(context.Background(), tokenSaveWait)
+	if !session.WaitTokensSaved(wctx) {
+		p.Log.Warn("token write-back: refreshed token not confirmed before exit", "waited", tokenSaveWait)
+	}
+	wcancel()
 	if !served {
 		select {
 		case serveErr = <-mp.ErrChan:

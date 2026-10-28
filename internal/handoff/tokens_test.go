@@ -21,6 +21,8 @@ type fakeTokens struct {
 	pushes   []func(string, string)
 	gotLock  chan struct{}
 	lockWait chan struct{}
+	// saveFails makes the next Save calls fail, like a Token Secret write error.
+	saveFails int
 }
 
 func (f *fakeTokens) Lock(_ context.Context, section string) (string, error) {
@@ -49,6 +51,10 @@ func (f *fakeTokens) Save(_ context.Context, section, token string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.saved = append(f.saved, section+"="+token)
+	if f.saveFails > 0 {
+		f.saveFails--
+		return errors.New("token secret write failed")
+	}
 	return nil
 }
 
@@ -224,4 +230,43 @@ func TestUnsavedTokenResentAfterReconnect(t *testing.T) {
 	events2, _, _ := startServer(t, ServerConfig{SockPath: path, Mode: ModeAdopt, Tokens: h2})
 	next(t, events2, EventAdopted)
 	waitFor(t, func() bool { _, saved, _ := h2.snapshot(); return len(saved) == 1 && saved[0] == "a=fresh" })
+}
+
+// A token stays queued until the node plugin confirms the Token Secret write: a
+// failed write is resent, and WaitTokensSaved returns only after the confirmation.
+func TestRefreshedTokenKeptUntilWriteConfirmed(t *testing.T) {
+	// Two failures: Run may resend the queued token right at start, beside SaveToken's send.
+	h := &fakeTokens{saveFails: 2}
+	s, _ := tokenSession(t, h, nil)
+	if err := s.SaveToken("a", "fresh"); err != nil {
+		t.Fatal(err)
+	}
+	short, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if s.WaitTokensSaved(short) {
+		t.Fatal("confirmed although the Token Secret write failed")
+	}
+	ctx, cancel2 := context.WithTimeout(context.Background(), 2*saveRetry)
+	defer cancel2()
+	if !s.WaitTokensSaved(ctx) {
+		t.Fatal("token not confirmed after the resend")
+	}
+	if _, saved, _ := h.snapshot(); len(saved) < 2 || saved[len(saved)-1] != "a=fresh" {
+		t.Fatalf("saves %v, want the failed ones and a resend", saved)
+	}
+}
+
+// An older confirmation does not drop a newer queued token.
+func TestOlderConfirmationKeepsNewerToken(t *testing.T) {
+	var ts tokenState
+	ts.keep("a", "old")
+	ts.keep("a", "new")
+	ts.confirm("a", tokenHash("old"))
+	if tok, ok := ts.unsavedToken("a"); !ok || tok != "new" {
+		t.Fatalf("unsaved %q %v", tok, ok)
+	}
+	ts.confirm("a", tokenHash("new"))
+	if _, ok := ts.unsavedToken("a"); ok {
+		t.Fatal("confirmed token still queued")
+	}
 }
