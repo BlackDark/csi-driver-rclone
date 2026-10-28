@@ -41,7 +41,7 @@ func newFixture(t *testing.T) fixture {
 		must(t, os.Mkdir(d, 0o777))
 		must(t, os.Chmod(d, 0o777))
 	}
-	build := exec.Command("go", "build", "-o", f.bin, "../../cmd/csi-driver-rclone")
+	build := exec.Command("go", "build", "-buildvcs=false", "-o", f.bin, "../../cmd/csi-driver-rclone")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
 	must(t, build.Run())
 	return f
