@@ -167,3 +167,17 @@ func (s *Server) firstID() string {
 	}
 	return ""
 }
+
+func TestVolumeHealthWithoutPublishPathIsHealthy(t *testing.T) {
+	h := newHarness(t)
+	r, err := h.srv.NodeGetVolumeHealth(context.Background(), &csi.NodeGetVolumeHealthRequest{VolumeId: "vol-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.GetVolumeHealth().GetVolumeId() != "vol-1" || len(r.GetVolumeHealth().GetHealthStatuses()) != 0 {
+		t.Errorf("health = %v, want vol-1 without statuses", r.GetVolumeHealth())
+	}
+	if _, err := h.srv.NodeGetVolumeHealth(context.Background(), &csi.NodeGetVolumeHealthRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("no volume id: err = %v, want InvalidArgument", err)
+	}
+}

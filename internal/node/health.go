@@ -183,13 +183,17 @@ const ReasonMountPodLost = "MountPodLost"
 const notConnected = "the Mount Pod is gone (transport endpoint is not connected); restart the pod to remount"
 
 // NodeGetVolumeHealth reports a target Inaccessible when its Mount Pod was lost or the
-// mount answers ENOTCONN; kubelet writes it to pod.status.volumeHealth.
+// mount answers ENOTCONN; kubelet writes it to pod.status.volumeHealth. The publish
+// path is optional in CSI; without one there is no target to judge, so no abnormality.
 func (s *Server) NodeGetVolumeHealth(_ context.Context, req *csi.NodeGetVolumeHealthRequest) (*csi.NodeGetVolumeHealthResponse, error) {
 	path := req.GetVolumePublishPath()
-	if req.GetVolumeId() == "" || path == "" {
-		return nil, status.Error(codes.InvalidArgument, "volume id and volume publish path are required")
+	if req.GetVolumeId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "volume id is required")
 	}
 	health := &csi.VolumeHealth{VolumeId: req.GetVolumeId()}
+	if path == "" {
+		return &csi.NodeGetVolumeHealthResponse{VolumeHealth: health}, nil
+	}
 	msg, dead := s.deadReason(path)
 	if !dead {
 		_, err := s.deps.Statfs(path)
