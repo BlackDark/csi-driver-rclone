@@ -48,6 +48,11 @@ func Run(ctx context.Context, p Params) error {
 	if err != nil {
 		return err
 	}
+	var hook *tokenHook
+	if len(p.Spec.Tokens) > 0 {
+		hook = newTokenHook(p.Spec.Tokens, p.Log)
+		hook.install()
+	}
 	var ready atomic.Bool
 	col := newCollector(p.VolumeID, globalTransfers)
 	reg := metrics.NewRegistry()
@@ -65,20 +70,24 @@ func Run(ctx context.Context, p Params) error {
 		return err
 	}
 	p.Log.Info("received fuse fd", "fd", fd)
+	// The session runs before the mount: opening the remote may already need the token lock.
+	session := handoff.NewSession(p.SockPath, conn, p.ReconnectBackoff, p.Log)
+	defer func() { _ = session.Close() }()
+	if hook != nil {
+		session.WatchTokens(hook.push)
+		hook.attach(session)
+	}
+	go session.Run(context.WithoutCancel(ctx))
 	mp, err := mount(p.Spec.Remote.FsPath, "/dev/fd/"+strconv.Itoa(fd), opts)
 	if err != nil {
-		_ = conn.Close()
 		return err
 	}
 	col.setVFS(mp.VFS.Stats)
-	session := handoff.NewSession(p.SockPath, conn, p.ReconnectBackoff, p.Log)
-	defer func() { _ = session.Close() }()
 	if err := session.Send(handoff.MsgReady); err != nil {
 		return err
 	}
-	p.Log.Info("mount ready", "fs", p.Spec.Remote.FsPath, "identity", p.Spec.Identity)
+	p.Log.Info("mount ready", "fs", p.Spec.Remote.FsPath, "identity", p.Spec.Identity, "tokenWriteBack", len(p.Spec.Tokens))
 	ready.Store(true)
-	go session.Run(context.WithoutCancel(ctx))
 	return stop(ctx, p, mp, session, func() { ready.Store(false) })
 }
 
