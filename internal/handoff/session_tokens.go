@@ -113,6 +113,18 @@ func (s *Session) sendArg(m Message, arg string) error {
 	return s.conn.send(m, arg)
 }
 
+// keepUnsaved requeues a failed resend unless a newer save is already queued.
+func (s *Session) keepUnsaved(section, token string) {
+	s.tokens.mu.Lock()
+	defer s.tokens.mu.Unlock()
+	if s.tokens.unsaved == nil {
+		s.tokens.unsaved = map[string]string{}
+	}
+	if _, newer := s.tokens.unsaved[section]; !newer {
+		s.tokens.unsaved[section] = token
+	}
+}
+
 // subscribeTokens starts token pushes on a new connection and resends unsaved tokens.
 func (s *Session) subscribeTokens(conn *Conn) {
 	s.tokens.mu.Lock()
@@ -130,6 +142,7 @@ func (s *Session) subscribeTokens(conn *Conn) {
 	for section, token := range unsaved {
 		if err := conn.send(MsgTokenSave, tokenArg(section, token)); err != nil {
 			s.log.Warn("resend refreshed token", "section", section, "err", err)
+			s.keepUnsaved(section, token)
 		}
 	}
 }

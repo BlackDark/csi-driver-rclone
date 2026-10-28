@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -36,8 +37,8 @@ func Name(seedHash string) string { return namePrefix + seedHash[:32] }
 // validSeedHash: a hex sha256, as mountspec.HashToken writes it. spec.json is read
 // back on adoption, so a broken file must not reach Name.
 func validSeedHash(h string) bool {
-	if len(h) != 64 {
-		return false
+	if len(h) != 64 || h != strings.ToLower(h) {
+		return false // Kubernetes names are lowercase
 	}
 	_, err := hex.DecodeString(h)
 	return err == nil

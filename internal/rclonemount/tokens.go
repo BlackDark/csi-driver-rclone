@@ -38,17 +38,18 @@ type tokenHook struct {
 	// plugin's Lease MaxHold, far beyond rclone's own HTTP timeouts for a refresh.
 	holdTimeout time.Duration
 
-	lockMu map[string]*sync.Mutex // per section: serializes lock requests; never held by push
-	mu     sync.Mutex
-	locker tokenLocker
-	held   map[string]*time.Timer // by isolated section
+	lockMu   map[string]*sync.Mutex // per section: serializes lock requests; never held by push
+	mu       sync.Mutex
+	locker   tokenLocker
+	held     map[string]*time.Timer // by isolated section
+	failedAt map[string]time.Time   // last lock failure by isolated section
 }
 
 func newTokenHook(tokens []mountspec.TokenSection, log *slog.Logger) *tokenHook {
 	h := &tokenHook{
 		original: map[string]string{}, isolated: map[string]string{}, held: map[string]*time.Timer{},
-		lockMu: map[string]*sync.Mutex{},
-		log:    log, now: time.Now, lockTimeout: time.Minute, holdTimeout: 2 * time.Minute,
+		lockMu: map[string]*sync.Mutex{}, failedAt: map[string]time.Time{},
+		log: log, now: time.Now, lockTimeout: time.Minute, holdTimeout: 2 * time.Minute,
 	}
 	for _, ts := range tokens {
 		h.original[ts.Isolated] = ts.Section
@@ -83,8 +84,10 @@ func (h *tokenHook) getValue(section, key string) (string, bool) {
 	}
 	h.mu.Lock()
 	locker, holding := h.locker, h.held[section] != nil
+	// Callers queued behind a failed attempt do not each wait a full lockTimeout.
+	recentFail := h.now().Sub(h.failedAt[section]) < h.lockTimeout
 	h.mu.Unlock()
-	if holding {
+	if holding || recentFail {
 		return v, ok
 	}
 	if locker == nil {
@@ -96,6 +99,9 @@ func (h *tokenHook) getValue(section, key string) (string, bool) {
 	newest, err := locker.LockToken(ctx, user)
 	if err != nil {
 		h.log.Warn("token write-back: no refresh lock, refreshing without it", "section", user, "err", err)
+		h.mu.Lock()
+		h.failedAt[section] = h.now()
+		h.mu.Unlock()
 		return v, ok
 	}
 	if newest != "" && newest != v {

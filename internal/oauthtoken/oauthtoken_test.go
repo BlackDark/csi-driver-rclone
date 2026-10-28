@@ -271,7 +271,13 @@ func TestManagerHandlerFlow(t *testing.T) {
 
 func TestHandlerSkipsMalformedSeedHash(t *testing.T) {
 	m := manager(fake.NewClientset())
-	h := m.Handler("a", []mountspec.TokenSection{{Section: "box", Isolated: "box_1", SeedHash: "short"}})
+	h := m.Handler("a", []mountspec.TokenSection{
+		{Section: "box", Isolated: "box_1", SeedHash: "short"},
+		{Section: "up", Isolated: "up_1", SeedHash: strings.ToUpper(seedHash)},
+	})
+	if _, err := h.Lock(context.Background(), "up"); !errors.Is(err, errUnknownSection) {
+		t.Fatalf("uppercase: %v", err)
+	}
 	if _, err := h.Lock(context.Background(), "box"); !errors.Is(err, errUnknownSection) {
 		t.Fatalf("err %v", err)
 	}

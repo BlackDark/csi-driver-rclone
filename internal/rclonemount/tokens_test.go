@@ -153,3 +153,19 @@ func TestHookPushAndUnmanaged(t *testing.T) {
 		t.Fatal("saved an unmanaged section")
 	}
 }
+
+func TestHookSkipsLockRightAfterAFailure(t *testing.T) {
+	h, _ := testHook(oauthTok("old", hookNow.Add(-time.Hour)))
+	l := &fakeLocker{err: errors.New("denied")}
+	h.attach(l)
+	h.getValue("box_1", "token")
+	h.getValue("box_1", "token")
+	if l.locks != 1 {
+		t.Fatalf("locks %d, want 1 within lockTimeout of a failure", l.locks)
+	}
+	h.now = func() time.Time { return hookNow.Add(2 * time.Minute) }
+	h.getValue("box_1", "token")
+	if l.locks != 2 {
+		t.Fatalf("locks %d after the window", l.locks)
+	}
+}
