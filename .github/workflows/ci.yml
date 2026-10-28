@@ -1,5 +1,6 @@
 # Rulesets require one check only: `check`, the gate over every job below.
-# e2e (kind, ~6-10 min) is opt-in: weekly on main, manual runs, PRs labelled `e2e`, and every
+# e2e (kind, ~6-10 min) never runs on PRs or pushes: weekly on main, manual runs (Run workflow
+# on any branch, also a PR's; its `check` then reports on the PR head) and every
 # release (release.yml calls this workflow with e2e: true). Everything else runs on every PR
 # and push; docs-only PRs skip fuse. release.yml also needs this workflow's `check` on main.
 # Go caches: restored everywhere, saved only on main (push, schedule, manual), never from PRs.
@@ -10,7 +11,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     - cron: "17 3 * * 1" # Mondays 03:17 UTC, e2e on main
   workflow_dispatch:
@@ -143,12 +144,11 @@ jobs:
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   e2e:
-    # Opt-in: schedule, manual run (input e2e), release (workflow_call e2e: true), PR label `e2e`.
+    # Never on PRs or pushes: schedule, manual run (input e2e), release (workflow_call e2e: true).
     needs: changes
     if: >-
       ${{ needs.changes.outputs.code == 'true'
-      && (github.event_name == 'schedule' || inputs.e2e
-      || contains(github.event.pull_request.labels.*.name, 'e2e')) }}
+      && (github.event_name == 'schedule' || inputs.e2e) }}
     runs-on: ubuntu-26.04
     timeout-minutes: 40
     permissions:
