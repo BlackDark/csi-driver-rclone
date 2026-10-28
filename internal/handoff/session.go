@@ -18,6 +18,7 @@ type Session struct {
 	conn   *Conn
 	last   Message // last drain result, resent after adopt
 	closed bool
+	tokens tokenState
 }
 
 // NewSession takes over conn, which already finished its handshake.
@@ -48,7 +49,8 @@ func (s *Session) Run(ctx context.Context) {
 		if conn == nil {
 			return
 		}
-		err := conn.Wait()
+		s.subscribeTokens(conn)
+		err := conn.readLoop(s.dispatch)
 		if s.drop(conn) {
 			return
 		}
@@ -84,6 +86,7 @@ func (s *Session) drop(conn *Conn) bool {
 	if s.conn == conn {
 		s.conn = nil
 	}
+	s.tokens.failPending()
 	return s.closed
 }
 
