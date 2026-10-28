@@ -20,7 +20,7 @@ const (
 	driverName = "rclone.csi.blackdark.github.io"
 	appNS      = "e2e-app"
 	busybox    = "busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
-	mcImage    = "cgr.dev/chainguard/minio-client@sha256:799a60aa839c0d79b53f1dccdddc974d0fe94282cca712fbfbad3b196f88d0ee"
+	mcImage    = "cgr.dev/chainguard/minio-client:latest@sha256:799a60aa839c0d79b53f1dccdddc974d0fe94282cca712fbfbad3b196f88d0ee"
 	mcHost     = "http://e2e-access:e2e-secret-key@minio.minio.svc:9000"
 	mountSel   = "app.kubernetes.io/name=csi-driver-rclone,app.kubernetes.io/component=mount"
 	configData = `[minio]
