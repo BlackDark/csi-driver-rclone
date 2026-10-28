@@ -24,7 +24,7 @@ for img in $(helm template t "$chart" | sed -n 's/^ *image: *"\{0,1\}\([^"]*\)"\
 done
 
 # Host build reuses the local Go build cache; the image only copies the binary in.
-arch="$(docker version -f '{{.Server.Arch}}')"
+arch="$(docker exec "$CLUSTER-control-plane" dpkg --print-architecture)" # the node's, not the daemon's
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -C "$root" -trimpath \
   -ldflags "-s -w -X main.version=e2e" -o bin/csi-driver-rclone ./cmd/csi-driver-rclone
 docker build -t "$IMAGE" --build-arg BIN=local --build-arg VERSION=e2e "$root"
