@@ -1,6 +1,9 @@
 //go:build e2e
 
 // Package e2e runs against the cluster brought up by hack/e2e/up.sh (mise run e2e).
+// Tests that restart the node plugin, kill rclone or roll the chart run serially
+// first; the rest call t.Parallel and run together afterwards, each scoped to its
+// own volume.
 package e2e
 
 import (
@@ -54,6 +57,7 @@ func client(t *testing.T) kubernetes.Interface {
 }
 
 func TestStaticVolume(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	cs := client(t)
@@ -72,7 +76,7 @@ func TestStaticVolume(t *testing.T) {
 	waitLogContains(ctx, t, cs, appNS, pod.Name, marker)
 	t.Log("pod wrote and read through the volume")
 
-	if n := countMount(ctx, t, cs); n != 1 {
+	if n := countMount(ctx, t, cs, pv.Name); n != 1 {
 		t.Fatalf("want 1 Mount Pod and Secret pair, got %d", n)
 	}
 	poll(ctx, t, "object in MinIO", func() (bool, error) {
@@ -83,12 +87,13 @@ func TestStaticVolume(t *testing.T) {
 
 	deletePod(ctx, t, cs, pod.Name)
 	poll(ctx, t, "Mount Pod and owned Secret gone", func() (bool, error) {
-		return countMount(ctx, t, cs) == 0, nil
+		return countMount(ctx, t, cs, pv.Name) == 0, nil
 	})
 	t.Log("Mount Pod and owned Secret gone")
 }
 
 func TestCredentialsInVolumeContextRejected(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	cs := client(t)

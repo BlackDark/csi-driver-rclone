@@ -33,6 +33,7 @@ var (
 )
 
 func TestMetricsEndpointsAndProbes(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	cs := client(t)
@@ -45,7 +46,7 @@ func TestMetricsEndpointsAndProbes(t *testing.T) {
 	mustCreatePod(ctx, t, cs, pod)
 	waitLogContains(ctx, t, cs, appNS, pod.Name, "METRICS-OK")
 
-	mp := soleMountPod(ctx, t, cs)
+	mp := soleMountPod(ctx, t, cs, vol)
 	poll(ctx, t, "Mount Pod ready", func() (bool, error) {
 		p, err := cs.CoreV1().Pods(driverNS()).Get(ctx, mp.Name, metav1.GetOptions{})
 		return err == nil && podReady(p), err
@@ -75,7 +76,7 @@ func TestMetricsEndpointsAndProbes(t *testing.T) {
 	requireProbes(ctx, t, cs, mp)
 
 	deletePod(ctx, t, cs, pod.Name)
-	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs) == 0, nil })
+	poll(ctx, t, "Mount Pod gone", func() (bool, error) { return countMount(ctx, t, cs, vol) == 0, nil })
 }
 
 func podReady(p *corev1.Pod) bool {
