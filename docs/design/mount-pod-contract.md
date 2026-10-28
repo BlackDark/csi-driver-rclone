@@ -16,6 +16,7 @@ How the node plugin and a Mount Pod work together. Background: [ADR 0001](../adr
 - Pod: `restartPolicy: Never` (a restarted container would need a new fd, so the plugin recreates the pod), `automountServiceAccountToken: false`, `enableServiceLinks: false`, `fsGroup` = Mount Pod gid (Secret files are `0440`), an `emptyDir` at `/tmp` beside the read-only root filesystem, `terminationGracePeriodSeconds` = drain timeout + unmount wait + 10s.
 - The Secret is mounted at `/etc/rclone-mount/`. It holds `spec.json` (serialized Mount Spec, without the password) and `config-password` (optional).
 - In the Mount Pod the per-mount directory is mounted at `/run/rclone-mount/`, so the socket is `/run/rclone-mount/handoff.sock`. All paths are `mount` mode flags (`--spec`, `--config-password`, `--socket`, `--cache-dir`) with these defaults.
+- The Mount Pod serves `/metrics` and `/healthz` on `--metrics-addr` (default `:9810`, container port `metrics`); `/healthz` backs its readiness probe and answers 200 only while the mount is served. Its `VOLUME_ID` env comes from the `volume-id` annotation through the downward API and labels the series ([metrics](../reference/metrics.md)). There is no liveness probe: with RestartPolicy Never a dead rclone ends the pod and the plugin replaces it.
 
 ## spec.json
 

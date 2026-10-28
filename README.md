@@ -10,7 +10,7 @@
 
 ## Status
 
-Pre-alpha: Static Volumes work, with pods on one node sharing one Mount Pod that lingers `mountPod.linger` (default 2m) after the last pod leaves and drains pending uploads on stop. Mounts survive node plugin restarts and `helm upgrade`. A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted. Dynamic Volumes work: a StorageClass gives each PVC its own templated subpath, and deleting the PVC keeps the data. Inline Volumes work, with a Credential Secret in the pod's namespace and a restricted option subset. The hostPath Cache survives Mount Pod replacement; `cacheVolume` puts it on any volume source. No image or chart is published yet, so build both from source. What v1 covers: [docs/scope.md](docs/scope.md).
+Pre-alpha: Static Volumes work, with pods on one node sharing one Mount Pod that lingers `mountPod.linger` (default 2m) after the last pod leaves and drains pending uploads on stop. Mounts survive node plugin restarts and `helm upgrade`. A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted. Dynamic Volumes work: a StorageClass gives each PVC its own templated subpath, and deleting the PVC keeps the data. Inline Volumes work, with a Credential Secret in the pod's namespace and a restricted option subset. The hostPath Cache survives Mount Pod replacement; `cacheVolume` puts it on any volume source. Every component serves Prometheus metrics, with an optional ServiceMonitor, PodMonitor and Grafana dashboard ([series](docs/reference/metrics.md)). No image or chart is published yet, so build both from source. What v1 covers: [docs/scope.md](docs/scope.md).
 
 ## Quickstart
 

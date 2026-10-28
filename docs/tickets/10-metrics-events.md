@@ -4,7 +4,7 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] e2e scrapes each endpoint and finds the documented series
-- [ ] The dashboard renders against the e2e metrics; probes are on every component
+- [x] e2e scrapes each endpoint and finds the documented series
+- [x] The dashboard renders against the e2e metrics; probes are on every component
