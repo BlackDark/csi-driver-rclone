@@ -20,6 +20,7 @@ spec:
       containers:
         - name: minio
           image: cgr.dev/chainguard/minio:latest@sha256:e70b2b1e74d79457f808710483bd726ff364529ca30736eaa15a6ab547d3a5a7
+          imagePullPolicy: IfNotPresent
           args: [server, /data]
           env:
             - {name: MINIO_ROOT_USER, value: e2e-access}
@@ -58,6 +59,7 @@ spec:
       containers:
         - name: mc
           image: cgr.dev/chainguard/minio-client:latest@sha256:799a60aa839c0d79b53f1dccdddc974d0fe94282cca712fbfbad3b196f88d0ee
+          imagePullPolicy: IfNotPresent
           args: [mb, --ignore-existing, e2e/e2e-bucket]
           env:
             - {name: HOME, value: /tmp}
