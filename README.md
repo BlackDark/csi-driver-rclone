@@ -10,19 +10,21 @@
 
 ## Status
 
-Pre-alpha: Static Volumes work, with pods on one node sharing one Mount Pod that lingers `mountPod.linger` (default 2m) after the last pod leaves and drains pending uploads on stop. Mounts survive node plugin restarts and `helm upgrade`; a Mount Pod in use keeps its image, and Mount Pods started later use the new one. Mount Pod resources default to a 64Mi request with no memory limit and can be set per volume ([operations](docs/operations.md): memory sizing, upgrades). A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted. Dynamic Volumes work: a StorageClass gives each PVC its own templated subpath, and deleting the PVC keeps the data. Inline Volumes work, with a Credential Secret in the pod's namespace and a restricted option subset. The hostPath Cache survives Mount Pod replacement; `cacheVolume` puts it on any volume source. Every component serves Prometheus metrics, with an optional ServiceMonitor, PodMonitor and Grafana dashboard ([series](docs/reference/metrics.md)). No image or chart is published yet, so build both from source. What v1 covers: [docs/scope.md](docs/scope.md).
+Pre-alpha: Static Volumes work, with pods on one node sharing one Mount Pod that lingers `mountPod.linger` (default 2m) after the last pod leaves and drains pending uploads on stop. Mounts survive node plugin restarts and `helm upgrade`; a Mount Pod in use keeps its image, and Mount Pods started later use the new one. Mount Pod resources default to a 64Mi request with no memory limit and can be set per volume ([operations](docs/operations.md): memory sizing, upgrades). A crashed Mount Pod is recreated, and the pods that used it get a `MountLost` Event and must be restarted. Dynamic Volumes work: a StorageClass gives each PVC its own templated subpath, and deleting the PVC keeps the data. Inline Volumes work, with a Credential Secret in the pod's namespace and a restricted option subset. The hostPath Cache survives Mount Pod replacement; `cacheVolume` puts it on any volume source. Every component serves Prometheus metrics, with an optional ServiceMonitor, PodMonitor and Grafana dashboard ([series](docs/reference/metrics.md)). Each `v<version>` tag publishes a multi-arch image (amd64, arm64) and the OCI chart to GHCR, both signed with cosign. What v1 covers: [docs/scope.md](docs/scope.md).
 
 ## Quickstart
 
 The node plugin is privileged, so its namespace needs the `privileged` Pod Security level. Mount Pods run in the same namespace.
 
 ```bash
-docker build -t csi-driver-rclone:dev .   # then push it, or kind load it
-kubectl create namespace csi-rclone
-kubectl label namespace csi-rclone pod-security.kubernetes.io/enforce=privileged
-helm install csi-rclone charts/csi-driver-rclone -n csi-rclone \
-  --set image.repository=csi-driver-rclone --set image.tag=dev
+helm install csi-rclone oci://ghcr.io/blackdark/charts/csi-driver-rclone --version <version> \
+  -n csi-rclone --create-namespace
+kubectl label namespace csi-rclone pod-security.kubernetes.io/enforce=privileged --overwrite
 ```
+
+The chart's image defaults to `ghcr.io/blackdark/csi-driver-rclone:<appVersion>`. Pods created before the label are rejected; label the namespace first (`kubectl create namespace csi-rclone` and drop `--create-namespace`) or restart the DaemonSet after labelling. Verify signatures with `cosign verify ghcr.io/blackdark/csi-driver-rclone:<version> --certificate-identity-regexp '^https://github.com/BlackDark/csi-driver-rclone/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+
+From source: `docker build -t csi-driver-rclone:dev .`, load it into the cluster, and install `charts/csi-driver-rclone` with `--set image.repository=csi-driver-rclone --set image.tag=dev`.
 
 A Static Volume: credentials go in a Credential Secret, everything else in `volumeAttributes` ([keys](docs/reference/volume-parameters.md)).
 
@@ -117,7 +119,10 @@ Requires [mise](https://mise.jdx.dev) and Docker.
 ```bash
 git clone https://github.com/BlackDark/csi-driver-rclone && cd csi-driver-rclone
 mise install
-mise run check      # format, vet, lint, unit tests, helm lint
+mise run check      # format, vet, lint, unit tests, csi-sanity, helm lint
+mise run test:fuse  # FUSE handoff in a Linux container (needs /dev/fuse)
 mise run e2e        # kind + MinIO end to end; cluster csi-rclone-e2e
 mise run e2e:down
 ```
+
+Release: set `version` and `appVersion` in `charts/csi-driver-rclone/Chart.yaml` to `X.Y.Z`, then push tag `vX.Y.Z`. `release.yml` runs CI, publishes image tags `X.Y.Z`, `X.Y`, `latest` and the chart, and creates the GitHub release. A manual run on a branch publishes image tag `edge` only.

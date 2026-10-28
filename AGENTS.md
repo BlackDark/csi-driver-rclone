@@ -14,7 +14,7 @@ Deviations:
 - Helm is the only install method (OCI chart on GHCR); no kustomize or raw manifests.
 - Images: distroless, non-root, multi-stage, native amd64 + arm64 runners.
 - golangci-lint in `mise run check` beside gofmt and go vet.
-- CI runs zizmor (workflow security) next to `check`; csi-sanity and e2e jobs to come.
+- CI: `check` gates `mise run check` (includes csi-sanity, `test/sanity`), zizmor + actionlint, `test:fuse`, e2e. `release.yml` on `v*` tags; `hack/release/check-version.sh` ties the tag to Chart.yaml.
 
 ## Map
 
