@@ -1,16 +1,29 @@
 # Rulesets require one check only: `check`, the gate over every job below.
-# release.yml ships a tag only when this workflow's `check` passed for its commit on main,
-# so pushes to main always run everything; docs-only PRs skip fuse and e2e.
-# Go caches: restored everywhere, saved only by pushes to main (never from PRs). Keyed on
-# go.sum: dependencies dominate compile time and change only with it.
+# e2e (kind, ~6-10 min) is opt-in: weekly on main, manual runs, PRs labelled `e2e`, and every
+# release (release.yml calls this workflow with e2e: true). Everything else runs on every PR
+# and push; docs-only PRs skip fuse. release.yml also needs this workflow's `check` on main.
+# Go caches: restored everywhere, saved only on main (push, schedule, manual), never from PRs.
+# Keyed on go.sum: dependencies dominate compile time and change only with it.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC, e2e on main
   workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the kind e2e suite
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      e2e:
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -59,10 +72,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }} # no cache in release runs
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
       - id: go-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
@@ -71,7 +87,7 @@ jobs:
       # gofmt, vet, golangci-lint, unit tests, csi-sanity (test/sanity), helm lint
       - run: mise run check
       - if: >-
-          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
           && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -104,10 +120,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }} # no cache in release runs
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
       - id: go-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
@@ -116,7 +135,7 @@ jobs:
       # Runner has /dev/fuse and passwordless sudo: no container, cached compile.
       - run: mise run test:fuse:host
       - if: >-
-          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
           && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -124,11 +143,12 @@ jobs:
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   e2e:
-    # PRs (non-draft, not docs-only) and main; not manual branch runs.
+    # Opt-in: schedule, manual run (input e2e), release (workflow_call e2e: true), PR label `e2e`.
     needs: changes
     if: >-
       ${{ needs.changes.outputs.code == 'true'
-      && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') }}
+      && (github.event_name == 'schedule' || inputs.e2e
+      || contains(github.event.pull_request.labels.*.name, 'e2e')) }}
     runs-on: ubuntu-26.04
     timeout-minutes: 40
     permissions:
@@ -138,10 +158,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }} # no cache in release runs
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
       - id: go-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
@@ -149,7 +172,7 @@ jobs:
           restore-keys: go-e2e-${{ runner.os }}-${{ runner.arch }}-
       - run: mise run e2e
       - if: >-
-          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
           && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

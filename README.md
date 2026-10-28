@@ -185,7 +185,9 @@ mise run e2e        # kind + MinIO end to end; cluster csi-rclone-e2e
 mise run e2e:down
 ```
 
-Release: set `version` and `appVersion` in `charts/csi-driver-rclone/Chart.yaml` to `X.Y.Z`, merge to `main`, wait for CI on `main` to pass, then push tag `vX.Y.Z` on that commit. `release.yml` does not rerun e2e: it fails unless the tag commit is on `main` and its CI run there passed `check` (`hack/release/check-main-ci.sh`, waits while that run is in progress), reruns `mise run check`, then publishes image tags `X.Y.Z`, `X.Y`, `latest` and the chart, and creates the GitHub release. A manual run on a branch publishes image tag `edge` only.
+CI runs e2e only weekly on `main`, on manual runs (Actions → CI → Run workflow) and on PRs labelled `e2e`; every other job runs on each PR and push.
+
+Release: set `version` and `appVersion` in `charts/csi-driver-rclone/Chart.yaml` to `X.Y.Z`, merge to `main`, wait for CI on `main` to pass, then push tag `vX.Y.Z` on that commit. `release.yml` fails unless the tag commit is on `main` and its CI run there passed `check` (`hack/release/check-main-ci.sh`, waits while that run is in progress), runs the full CI including e2e on the tag, then publishes image tags `X.Y.Z`, `X.Y`, `latest` and the chart, and creates the GitHub release. A manual run on a branch publishes image tag `edge` only.
 
 ## License
 

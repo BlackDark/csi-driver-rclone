@@ -2,8 +2,8 @@
 # the chart version and appVersion. Manual run on a branch → image tag `edge` only.
 # amd64 and arm64 build on native runners and push by digest; `merge` joins them into one index.
 # Images and the chart are signed keyless with cosign (GitHub OIDC).
-# A tag ships only a commit on main whose CI run (ci.yml, push to main) passed `check`;
-# e2e is not rerun here. `test` reruns the fast `mise run check` as a safety net.
+# A tag ships only a commit on main whose CI run (ci.yml on main) passed `check`, and the
+# full CI including e2e passes again on the tag (job `ci`, no caches restored for tags).
 name: Release
 
 on:
@@ -22,19 +22,13 @@ env:
   CHART_REPO: oci://ghcr.io/blackdark/charts
 
 jobs:
-  test:
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
+  # Full CI including e2e on the tag commit: e2e is not part of every main push.
+  ci:
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] actionlint rejects $/ syntax
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
-        with:
-          cache: false # no cache restored into a release run
-      - run: mise run check
+    with:
+      e2e: true
 
   # The tag commit is on main and CI on main passed for it; waits while that run is in progress.
   main-ci:
@@ -72,9 +66,9 @@ jobs:
       - run: bash hack/release/check-version.sh "$GITHUB_REF_NAME"
 
   build:
-    needs: [test, main-ci, version]
+    needs: [ci, main-ci, version]
     if: >-
-      ${{ !cancelled() && needs.test.result == 'success'
+      ${{ !cancelled() && needs.ci.result == 'success'
       && needs.main-ci.result != 'failure' && needs.version.result != 'failure' }}
     strategy:
       matrix:
