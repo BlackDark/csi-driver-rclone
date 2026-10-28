@@ -1,0 +1,5 @@
+# actionlint 1.7.12 predates the GA ubuntu-26.04 hosted runners; drop once it knows them.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
