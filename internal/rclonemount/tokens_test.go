@@ -154,18 +154,40 @@ func TestHookPushAndUnmanaged(t *testing.T) {
 	}
 }
 
-func TestHookSkipsLockRightAfterAFailure(t *testing.T) {
+// blockingLocker fails LockToken after release is closed, counting calls.
+type blockingLocker struct {
+	fakeLocker
+	calls   chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingLocker) LockToken(ctx context.Context, s string) (string, error) {
+	b.calls <- struct{}{}
+	<-b.release
+	return b.fakeLocker.LockToken(ctx, s)
+}
+
+// Only callers queued behind a failed request skip the lock; a later read asks the
+// node plugin again, which may be back.
+func TestHookSkipsLockOnlyForCallersQueuedBehindAFailure(t *testing.T) {
 	h, _ := testHook(oauthTok("old", hookNow.Add(-time.Hour)))
-	l := &fakeLocker{err: errors.New("denied")}
+	l := &blockingLocker{fakeLocker: fakeLocker{err: errors.New("denied")},
+		calls: make(chan struct{}, 4), release: make(chan struct{})}
 	h.attach(l)
-	h.getValue("box_1", "token")
-	h.getValue("box_1", "token")
+	done := make(chan struct{}, 2)
+	read := func() { h.getValue("box_1", "token"); done <- struct{}{} }
+	go read()
+	<-l.calls // first request is waiting on the plugin
+	go read() // queued behind it on the section mutex
+	time.Sleep(20 * time.Millisecond)
+	close(l.release)
+	<-done
+	<-done
 	if l.locks != 1 {
-		t.Fatalf("locks %d, want 1 within lockTimeout of a failure", l.locks)
+		t.Fatalf("locks %d, want 1: the queued caller must not ask again", l.locks)
 	}
-	h.now = func() time.Time { return hookNow.Add(2 * time.Minute) }
 	h.getValue("box_1", "token")
 	if l.locks != 2 {
-		t.Fatalf("locks %d after the window", l.locks)
+		t.Fatalf("locks %d, want 2: a later read must ask again", l.locks)
 	}
 }

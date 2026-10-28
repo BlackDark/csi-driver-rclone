@@ -42,13 +42,13 @@ type tokenHook struct {
 	mu       sync.Mutex
 	locker   tokenLocker
 	held     map[string]*time.Timer // by isolated section
-	failedAt map[string]time.Time   // last lock failure by isolated section
+	failures map[string]uint64      // lock failures by isolated section
 }
 
 func newTokenHook(tokens []mountspec.TokenSection, log *slog.Logger) *tokenHook {
 	h := &tokenHook{
 		original: map[string]string{}, isolated: map[string]string{}, held: map[string]*time.Timer{},
-		lockMu: map[string]*sync.Mutex{}, failedAt: map[string]time.Time{},
+		lockMu: map[string]*sync.Mutex{}, failures: map[string]uint64{},
 		log: log, now: time.Now, lockTimeout: time.Minute, holdTimeout: 2 * time.Minute,
 	}
 	for _, ts := range tokens {
@@ -77,6 +77,9 @@ func (h *tokenHook) getValue(section, key string) (string, bool) {
 	if !managed || key != mountspec.KeyToken || h.valid(v) {
 		return v, ok
 	}
+	h.mu.Lock()
+	queuedAt := h.failures[section]
+	h.mu.Unlock()
 	h.lockMu[section].Lock()
 	defer h.lockMu[section].Unlock()
 	if v, ok = h.get(section, key); h.valid(v) {
@@ -84,10 +87,11 @@ func (h *tokenHook) getValue(section, key string) (string, bool) {
 	}
 	h.mu.Lock()
 	locker, holding := h.locker, h.held[section] != nil
-	// Callers queued behind a failed attempt do not each wait a full lockTimeout.
-	recentFail := h.now().Sub(h.failedAt[section]) < h.lockTimeout
+	// Only callers queued behind a failed attempt skip the lock, so they do not each
+	// wait a full lockTimeout; a later read asks again once the plugin is back.
+	failedWhileQueued := h.failures[section] != queuedAt
 	h.mu.Unlock()
-	if holding || recentFail {
+	if holding || failedWhileQueued {
 		return v, ok
 	}
 	if locker == nil {
@@ -100,7 +104,7 @@ func (h *tokenHook) getValue(section, key string) (string, bool) {
 	if err != nil {
 		h.log.Warn("token write-back: no refresh lock, refreshing without it", "section", user, "err", err)
 		h.mu.Lock()
-		h.failedAt[section] = h.now()
+		h.failures[section]++
 		h.mu.Unlock()
 		return v, ok
 	}
