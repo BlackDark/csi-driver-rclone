@@ -187,7 +187,9 @@ mise run e2e:down
 
 CI runs e2e only weekly on `main`, and on manual runs: Actions → CI → Run workflow, pick the branch (a PR branch works; the result shows on the PR). Every other job runs on each PR and push.
 
-Release: set `version` and `appVersion` in `charts/csi-driver-rclone/Chart.yaml` to `X.Y.Z`, merge to `main`, wait for CI on `main` to pass, then push tag `vX.Y.Z` on that commit. `release.yml` fails unless the tag commit is on `main` and its CI run there passed `check` (`hack/release/check-main-ci.sh`, waits while that run is in progress), runs the full CI including e2e on the tag, then publishes image tags `X.Y.Z`, `X.Y`, `latest` and the chart, and creates the GitHub release. A manual run on a branch publishes image tag `edge` only.
+Release: merge the release PR. On every push to `main`, release-please (`.github/workflows/release-please.yml`) keeps a release PR open that bumps the version from Conventional Commits (pre-1.0: `feat` → minor, `fix` → patch, `!` → minor), updates `CHANGELOG.md` and sets `version` and `appVersion` in `charts/csi-driver-rclone/Chart.yaml`. Merging it tags `vX.Y.Z`, creates the GitHub release with the changelog, and calls `release.yml`: it fails unless the tag commit is on `main` with a CI run there that passed `check` (`hack/release/check-main-ci.sh`, waits while that run is in progress) and the tag equals the chart version (`hack/release/check-version.sh`), runs the full CI including e2e, then publishes image tags `X.Y.Z`, `X.Y`, `latest` and the chart. Never push release tags by hand. A manual run of `release.yml` on a branch publishes image tag `edge` only.
+
+One-time setup: PRs opened with `GITHUB_TOKEN` trigger no workflows, so the release PR gets no `check`. Store a fine-grained PAT (this repo; Contents and Pull requests read/write) or a GitHub App token as repository secret `RELEASE_PLEASE_TOKEN`. Without it, push an empty commit to the release PR branch or close and reopen the PR to run CI.
 
 ## License
 
