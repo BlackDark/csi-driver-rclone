@@ -64,16 +64,16 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             code=false
             lint=false
-            files=$(git diff --no-renames --name-only -z HEAD^1 HEAD | xargs -0 -n1 printf '%s\n')
-            while IFS= read -r f; do
-              case "$f" in
+            git diff --no-renames --name-only -z HEAD^1 HEAD > "$RUNNER_TEMP/changed-paths"
+            while IFS= read -r -d '' path; do
+              case "$path" in
                 docs/* | *.md | LICENSE) ;;
                 .github/workflows/ci.yml) code=true; lint=true ;;
-                mise.toml) code=true; lint=true ;;
+                mise.toml | .config/mise* | mise/* | .mise/* | mise.lock) code=true; lint=true ;;
                 .github/* | renovate.json | renovate.json5) lint=true ;;
                 *) code=true ;;
               esac
-            done <<< "$files"
+            done < "$RUNNER_TEMP/changed-paths"
           fi
           { echo "code=$code"; echo "lint=$lint"; } | tee -a "$GITHUB_OUTPUT"
 
