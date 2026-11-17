@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1](https://github.com/BlackDark/csi-driver-rclone/compare/v0.3.0...v0.3.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **deps:** update module golang.org/x/crypto to v0.59.0 [security] ([#22](https://github.com/BlackDark/csi-driver-rclone/issues/22)) ([38983f0](https://github.com/BlackDark/csi-driver-rclone/commit/38983f0a80326bf1dafe4ae25b2f1ea052bb4612))
+
+
+### Documentation
+
+* note that release PRs need a manual CI run ([#15](https://github.com/BlackDark/csi-driver-rclone/issues/15)) ([466a2c8](https://github.com/BlackDark/csi-driver-rclone/commit/466a2c8b92aac4b4e2c37b52bfb8f5289c35846e))
+
 ## [0.3.0](https://github.com/BlackDark/csi-driver-rclone/compare/v0.2.0...v0.3.0) (2026-10-28)
 
 
