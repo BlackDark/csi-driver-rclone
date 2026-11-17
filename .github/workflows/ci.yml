@@ -3,8 +3,7 @@
 # on any branch, also a PR's; its `check` then reports on the PR head) and every
 # release (release.yml calls this workflow with e2e: true, release: true). PRs run only matching
 # code and lint areas; main runs every area. release.yml also needs this workflow's `check` on main.
-# Go caches: restored everywhere except release runs, saved only on main (push, schedule,
-# manual), never from PRs or release runs.
+# Go caches: restored except in release runs; saved from main pushes (e2e: also schedule), never PRs or releases.
 # Keyed on go.sum: dependencies dominate compile time and change only with it.
 name: CI
 
