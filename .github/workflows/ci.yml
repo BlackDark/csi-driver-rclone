@@ -1,10 +1,9 @@
 # Rulesets require one check only: `check`, the gate over every job below.
 # e2e (kind, ~6-10 min) never runs on PRs or pushes: weekly on main, manual runs (Run workflow
 # on any branch, also a PR's; its `check` then reports on the PR head) and every
-# release (release.yml calls this workflow with e2e: true, release: true). Everything else runs on every PR
-# and push; docs-only PRs skip fuse. release.yml also needs this workflow's `check` on main.
-# Go caches: restored everywhere except release runs, saved only on main (push, schedule,
-# manual), never from PRs or release runs.
+# release (release.yml calls this workflow with e2e: true, release: true). PRs run only matching
+# code and lint areas; main runs every area. release.yml also needs this workflow's `check` on main.
+# Go caches: restored except in release runs; saved from main pushes (e2e: also schedule), never PRs or releases.
 # Keyed on go.sum: dependencies dominate compile time and change only with it.
 name: CI
 
@@ -37,8 +36,12 @@ concurrency:
   group: ci-${{ github.ref }}${{ inputs.release && '-release' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # renovate: datasource=npm depName=renovate
+  RENOVATE_VERSION: "44.221.1"
+
 jobs:
-  # code=false only for a PR touching nothing but docs/** and *.md.
+  # ci.yml selects both areas; docs and Renovate-only changes skip code checks.
   changes:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
@@ -47,6 +50,7 @@ jobs:
       contents: read
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      lint: ${{ steps.diff.outputs.lint }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'pull_request'
@@ -56,19 +60,26 @@ jobs:
       - id: diff
         run: |
           code=true
+          lint=true
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            files=$(git diff --name-only HEAD^1 HEAD)
-            if [ -n "$files" ]; then
-              code=false
-              while IFS= read -r f; do
-                case "$f" in docs/* | *.md) ;; *) code=true ;; esac
-              done <<< "$files"
-            fi
+            code=false
+            lint=false
+            files=$(git diff --no-renames --name-only -z HEAD^1 HEAD | xargs -0 -n1 printf '%s\n')
+            while IFS= read -r f; do
+              case "$f" in
+                docs/* | *.md | LICENSE) ;;
+                .github/workflows/ci.yml) code=true; lint=true ;;
+                mise.toml) code=true; lint=true ;;
+                .github/* | renovate.json | renovate.json5) lint=true ;;
+                *) code=true ;;
+              esac
+            done <<< "$files"
           fi
-          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+          { echo "code=$code"; echo "lint=$lint"; } | tee -a "$GITHUB_OUTPUT"
 
   test:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
@@ -77,9 +88,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: ${{ !inputs.release }} # no cache in release runs
+          cache_save: ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
@@ -93,15 +105,16 @@ jobs:
       # gofmt, vet, golangci-lint, unit tests, csi-sanity (test/sanity), helm lint
       - run: mise run check
       - if: >-
-          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
-          && steps.go-cache.outputs.cache-hit != 'true' }}
+          ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+          && !inputs.release && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   workflows:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: needs.changes.outputs.lint == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -110,9 +123,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        with:
+          cache_save: false # lint-only install set; don't write the shared key
       - run: zizmor --format=github .github/workflows
       - run: actionlint
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
+      - run: npx --yes --package "renovate@${RENOVATE_VERSION}" -- renovate-config-validator --strict
 
   fuse:
     needs: changes
@@ -125,9 +145,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: ${{ !inputs.release }} # no cache in release runs
+          cache_save: ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
@@ -141,8 +162,8 @@ jobs:
       # Runner has /dev/fuse and passwordless sudo: no container, cached compile.
       - run: mise run test:fuse:host
       - if: >-
-          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
-          && steps.go-cache.outputs.cache-hit != 'true' }}
+          ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+          && !inputs.release && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
@@ -162,9 +183,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: ${{ !inputs.release }} # no cache in release runs
+          cache_save: ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
@@ -177,8 +199,9 @@ jobs:
           restore-keys: go-e2e-${{ runner.os }}-${{ runner.arch }}-
       - run: mise run e2e
       - if: >-
-          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
-          && steps.go-cache.outputs.cache-hit != 'true' }}
+          ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main'
+          && (github.event_name == 'push' || github.event_name == 'schedule')
+          && !inputs.release && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
