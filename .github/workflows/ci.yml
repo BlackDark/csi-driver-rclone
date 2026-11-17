@@ -92,7 +92,7 @@ jobs:
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: ${{ !inputs.release }} # no cache in release runs
-          cache_save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
@@ -106,8 +106,8 @@ jobs:
       # gofmt, vet, golangci-lint, unit tests, csi-sanity (test/sanity), helm lint
       - run: mise run check
       - if: >-
-          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
-          && steps.go-cache.outputs.cache-hit != 'true' }}
+          ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+          && !inputs.release && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
@@ -126,7 +126,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
-          cache_save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache_save: false # lint-only install set; don't write the shared key
       - run: zizmor --format=github .github/workflows
       - run: actionlint
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -149,7 +149,7 @@ jobs:
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: ${{ !inputs.release }} # no cache in release runs
-          cache_save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
@@ -163,8 +163,8 @@ jobs:
       # Runner has /dev/fuse and passwordless sudo: no container, cached compile.
       - run: mise run test:fuse:host
       - if: >-
-          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
-          && steps.go-cache.outputs.cache-hit != 'true' }}
+          ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+          && !inputs.release && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
@@ -187,7 +187,7 @@ jobs:
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: ${{ !inputs.release }} # no cache in release runs
-          cache_save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache_save: ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - id: go-dirs
         run: |
           { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
@@ -200,8 +200,8 @@ jobs:
           restore-keys: go-e2e-${{ runner.os }}-${{ runner.arch }}-
       - run: mise run e2e
       - if: >-
-          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
-          && steps.go-cache.outputs.cache-hit != 'true' }}
+          ${{ github.workflow == 'CI' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+          && !inputs.release && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.go-dirs.outputs.path }}
