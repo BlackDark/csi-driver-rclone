@@ -65,11 +65,12 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             code=false
             lint=false
-            files=$(git diff --no-renames --name-only HEAD^1 HEAD)
+            files=$(git diff --no-renames --name-only -z HEAD^1 HEAD | xargs -0 -n1 printf '%s\n')
             while IFS= read -r f; do
               case "$f" in
                 docs/* | *.md | LICENSE) ;;
                 .github/workflows/ci.yml) code=true; lint=true ;;
+                mise.toml) code=true; lint=true ;;
                 .github/* | renovate.json | renovate.json5) lint=true ;;
                 *) code=true ;;
               esac
@@ -128,6 +129,10 @@ jobs:
           cache_save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - run: zizmor --format=github .github/workflows
       - run: actionlint
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
       - run: npx --yes --package "renovate@${RENOVATE_VERSION}" -- renovate-config-validator --strict
 
   fuse:
