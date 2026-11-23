@@ -1,5 +1,5 @@
 [tools]
-go = "1.27.3"
+go = "1.27.4"
 "aqua:golangci/golangci-lint" = "2.15.0"
 "aqua:zizmorcore/zizmor" = "1.31.1"
 actionlint = "1.7.12"

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # build: compile in the image (release); local: hack/e2e/up.sh prebuilt bin/.
 ARG BIN=build
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:df4bb0305771186a85d0fd3a40f5c5da9af97ac8053d391ffce2c070817a20c6 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
