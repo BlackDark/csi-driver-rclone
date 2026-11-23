@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1](https://github.com/BlackDark/csi-driver-rclone/compare/v0.3.0...v0.3.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **deps:** update go modules (non-major) ([#32](https://github.com/BlackDark/csi-driver-rclone/issues/32)) ([92d07c2](https://github.com/BlackDark/csi-driver-rclone/commit/92d07c27a52c38a9754e09d26af7c3b05591c995))
+* **deps:** update kubernetes monorepo to v0.37.2 ([#28](https://github.com/BlackDark/csi-driver-rclone/issues/28)) ([bbc4e30](https://github.com/BlackDark/csi-driver-rclone/commit/bbc4e3033f55e9dae382aada99cac34913973cd0))
+* **deps:** update module golang.org/x/crypto to v0.59.0 [security] ([#22](https://github.com/BlackDark/csi-driver-rclone/issues/22)) ([38983f0](https://github.com/BlackDark/csi-driver-rclone/commit/38983f0a80326bf1dafe4ae25b2f1ea052bb4612))
+
+
+### Documentation
+
+* note that release PRs need a manual CI run ([#15](https://github.com/BlackDark/csi-driver-rclone/issues/15)) ([466a2c8](https://github.com/BlackDark/csi-driver-rclone/commit/466a2c8b92aac4b4e2c37b52bfb8f5289c35846e))
+
 ## [0.3.0](https://github.com/BlackDark/csi-driver-rclone/compare/v0.2.0...v0.3.0) (2026-10-28)
 
 
