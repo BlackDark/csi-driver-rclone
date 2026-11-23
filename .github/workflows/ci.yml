@@ -38,7 +38,7 @@ concurrency:
 
 env:
   # renovate: datasource=npm depName=renovate
-  RENOVATE_VERSION: "44.221.1"
+  RENOVATE_VERSION: "44.255.2"
 
 jobs:
   # ci.yml selects both areas; docs and Renovate-only changes skip code checks.
